@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from review_agent.author_privacy import AuthorHasher
-from review_agent.config import Settings
-from review_agent.forum_sources import dcard_import_item
-from review_agent.imports import DCARD_IMPORT_FIELDS, dcard_template, parse_dcard_import
+from simpsons_insight_agent.author_privacy import AuthorHasher
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.forum_sources import dcard_import_item
+from simpsons_insight_agent.imports import DCARD_IMPORT_FIELDS, dcard_template, parse_dcard_import
 
 
 def make_hasher(tmp_path: Path) -> AuthorHasher:

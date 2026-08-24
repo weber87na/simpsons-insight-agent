@@ -8,7 +8,7 @@ from pathlib import Path
 from alembic.config import Config
 
 from alembic import command
-from review_agent.config import get_settings
+from simpsons_insight_agent.config import get_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

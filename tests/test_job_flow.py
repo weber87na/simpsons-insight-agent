@@ -4,12 +4,19 @@ import numpy as np
 import pytest
 from sqlalchemy import func, select
 
-from review_agent.config import Settings
-from review_agent.db import SessionLocal, mark_inflight_jobs_interrupted
-from review_agent.jobs import JobManager
-from review_agent.models import Business, CrawlJob, JobReview, Report, Review, ReviewAnalysis
-from review_agent.scraper import CrawlResult, ScrapedReview
-from review_agent.sentiment import SentimentResult
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.db import SessionLocal, mark_inflight_jobs_interrupted
+from simpsons_insight_agent.jobs import JobManager
+from simpsons_insight_agent.models import (
+    Business,
+    CrawlJob,
+    JobReview,
+    Report,
+    Review,
+    ReviewAnalysis,
+)
+from simpsons_insight_agent.scraper import CrawlResult, ScrapedReview
+from simpsons_insight_agent.sentiment import SentimentResult
 
 
 def scraped(review_id: str, text: str) -> ScrapedReview:

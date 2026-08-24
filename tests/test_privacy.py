@@ -1,6 +1,6 @@
 import json
 
-from review_agent.privacy import normalize_text, redact_pii, sanitize_for_openai
+from simpsons_insight_agent.privacy import normalize_text, redact_pii, sanitize_for_openai
 
 
 def test_normalize_and_redact_known_identifiers() -> None:

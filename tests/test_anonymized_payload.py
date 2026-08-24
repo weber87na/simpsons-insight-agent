@@ -1,7 +1,7 @@
 import json
 
-from review_agent.jobs import build_anonymized_payload
-from review_agent.models import Review
+from simpsons_insight_agent.jobs import build_anonymized_payload
+from simpsons_insight_agent.models import Review
 
 
 def test_openai_payload_excludes_author_and_source_metadata_and_redacts_text() -> None:

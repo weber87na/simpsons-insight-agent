@@ -2,8 +2,8 @@ from types import MethodType
 
 import pytest
 
-from review_agent.config import Settings
-from review_agent.sentiment import (
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.sentiment import (
     SentimentAnalyzer,
     SentimentResult,
     calibrate_sentiment,

@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from playwright.async_api import async_playwright
 
-from review_agent.config import Settings
-from review_agent.scraper import MapsDomAdapter, MapsScraper
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.scraper import MapsDomAdapter, MapsScraper
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

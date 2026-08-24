@@ -1,11 +1,11 @@
-"""Create the local review-agent schema.
+"""Create the local simpsons-insight-agent schema.
 
 Revision ID: 0001_initial
 Revises: None
 """
 
 from alembic import op
-from review_agent.models import Base
+from simpsons_insight_agent.models import Base
 
 revision = "0001_initial"
 down_revision = None

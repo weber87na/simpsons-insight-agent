@@ -5,12 +5,12 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from review_agent.config import Settings
-from review_agent.db import SessionLocal
-from review_agent.jobs import JobManager
-from review_agent.models import JobReview, JobSource, Review
-from review_agent.schemas import CreateJobRequest
-from review_agent.sources import (
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.db import SessionLocal
+from simpsons_insight_agent.jobs import JobManager
+from simpsons_insight_agent.models import JobReview, JobSource, Review
+from simpsons_insight_agent.schemas import CreateJobRequest
+from simpsons_insight_agent.sources import (
     CollectedItem,
     SourceBlockedError,
     SourceCallbacks,

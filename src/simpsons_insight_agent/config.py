@@ -14,7 +14,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Google Maps 評論分析 Agent"
+    app_name: str = "simpsons-insight-agent"
     bind_host: str = "127.0.0.1"
     bind_port: int = 8000
     database_url: str = "sqlite+aiosqlite:///./data/reviews.db"

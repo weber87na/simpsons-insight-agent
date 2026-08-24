@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from review_agent.config import Settings
-from review_agent.forum_sources import DcardSource, PttSource
-from review_agent.schemas import DcardSourceConfig
-from review_agent.sources import CollectedItem, SourceCallbacks, SourceCheckpoint
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.forum_sources import DcardSource, PttSource
+from simpsons_insight_agent.schemas import DcardSourceConfig
+from simpsons_insight_agent.sources import CollectedItem, SourceCallbacks, SourceCheckpoint
 
 
 def callbacks(items: list[CollectedItem]) -> SourceCallbacks:

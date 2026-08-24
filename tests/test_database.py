@@ -2,9 +2,9 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from review_agent.config import Settings
-from review_agent.db import build_engine
-from review_agent.models import Base, Business, Review
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.db import build_engine
+from simpsons_insight_agent.models import Base, Business, Review
 
 
 @pytest.mark.asyncio

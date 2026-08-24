@@ -7,8 +7,8 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-from review_agent.config import get_settings
-from review_agent.models import Base
+from simpsons_insight_agent.config import get_settings
+from simpsons_insight_agent.models import Base
 
 config = context.config
 if config.config_file_name is not None:

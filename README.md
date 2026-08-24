@@ -34,13 +34,13 @@ uv run --no-sync alembic upgrade head
 因此上面使用非 editable 安裝。修改 Python 程式後可執行：
 
 ```powershell
-uv sync --no-editable --reinstall-package google-review-agent
+uv sync --no-editable --reinstall-package simpsons-insight-agent
 ```
 
 ## 啟動
 
 ```powershell
-uv run --no-sync review-agent
+uv run --no-sync simpsons-insight-agent
 ```
 
 開啟 <http://127.0.0.1:8000>。建立任務分三步：
@@ -150,7 +150,7 @@ SQLite、原文、瀏覽器 profile、模型與診斷資料都在已忽略版控
 ```powershell
 uv run --no-sync pytest
 uv run --no-sync ruff check .
-uv run --no-sync mypy src/review_agent
+uv run --no-sync mypy src/simpsons_insight_agent
 ```
 
 PTT 與 Dcard 解析、阻擋頁、惡意重新導向、匯入與 migration 測試預設全部使用離線 fixtures。

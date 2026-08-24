@@ -79,7 +79,7 @@ class JobManager:
 
     async def start(self) -> None:
         if self._worker is None or self._worker.done():
-            self._worker = asyncio.create_task(self._worker_loop(), name="review-agent-worker")
+            self._worker = asyncio.create_task(self._worker_loop(), name="simpsons-insight-agent-worker")
         async with SessionLocal() as session:
             result = await session.scalars(
                 select(CrawlJob.id).where(

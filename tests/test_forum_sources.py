@@ -6,16 +6,16 @@ from pathlib import Path
 import httpx
 import pytest
 
-import review_agent.forum_sources as forum_sources
-from review_agent.author_privacy import AuthorHasher
-from review_agent.config import Settings
-from review_agent.forum_sources import (
+import simpsons_insight_agent.forum_sources as forum_sources
+from simpsons_insight_agent.author_privacy import AuthorHasher
+from simpsons_insight_agent.config import Settings
+from simpsons_insight_agent.forum_sources import (
     _HttpFetcher,
     parse_dcard_article,
     parse_ptt_article,
     parse_ptt_search,
 )
-from review_agent.sources import SourceBlockedError
+from simpsons_insight_agent.sources import SourceBlockedError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

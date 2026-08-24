@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from review_agent.schemas import CreateJobRequest, DcardSourceConfig, PttSourceConfig
+from simpsons_insight_agent.schemas import CreateJobRequest, DcardSourceConfig, PttSourceConfig
 
 
 def valid_payload() -> dict:

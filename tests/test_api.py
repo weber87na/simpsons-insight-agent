@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from review_agent.api import app, settings
+from simpsons_insight_agent.api import app, settings
 
 
 def test_app_starts_and_serves_local_pages() -> None:

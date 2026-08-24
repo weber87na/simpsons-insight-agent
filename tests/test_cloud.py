@@ -1,4 +1,4 @@
-from review_agent.cloud import build_cloud_batches
+from simpsons_insight_agent.cloud import build_cloud_batches
 
 
 def test_cloud_batches_enforce_count_and_character_limits() -> None:

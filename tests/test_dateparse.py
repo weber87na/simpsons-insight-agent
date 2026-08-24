@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from review_agent.dateparse import parse_relative_date
+from simpsons_insight_agent.dateparse import parse_relative_date
 
 
 @pytest.mark.parametrize(

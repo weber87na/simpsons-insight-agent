@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from review_agent.reporting import build_aggregate
+from simpsons_insight_agent.reporting import build_aggregate
 
 
 def test_deterministic_aggregation_counts_conflicts_aspects_and_months() -> None:

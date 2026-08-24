@@ -1,6 +1,6 @@
 import numpy as np
 
-from review_agent.embeddings import EmbeddingService, vector_to_bytes
+from simpsons_insight_agent.embeddings import EmbeddingService, vector_to_bytes
 
 
 def test_numpy_cosine_ranking_uses_saved_float32_vectors() -> None:
