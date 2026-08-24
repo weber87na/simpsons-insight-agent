@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ business.name if business else '分析報告' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='multi-source.css') }}">
+</head>
+<body data-report-id="{{ report.id }}" data-job-id="{{ report.job_id }}">
+  <main class="shell report-shell">
+    <nav class="top-nav">
+      <a href="/">← 返回任務</a>
+      <div class="top-nav-actions"><span>{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</span><button id="delete-report-job" class="danger" type="button">刪除任務與爬文資料</button></div>
+    </nav>
+    <header class="report-hero">
+      <div>
+        <p class="eyebrow">CROSS-PLATFORM REPUTATION REPORT</p>
+        <h1>{{ business.name if business else '商家分析報告' }}</h1>
+        <p class="lead">{{ business.address if business and business.address else '未提供地址' }}</p>
+      </div>
+      <div class="score-card"><strong>{{ report.payload.sample_size }}</strong><span>跨平台樣本</span></div>
+    </header>
+
+    {% if report.status == 'PARTIAL' %}
+    <aside class="warning"><strong>這是部分報告</strong><p>本地結果已保存，但 OpenAI 面向或管理摘要尚未完整完成。可回到任務頁按「續跑」。</p></aside>
+    {% endif %}
+
+    {% if not report.payload.collection.complete %}
+    <aside class="warning"><strong>部分來源未完整</strong><p>報告已依目前取得的樣本產生；請查看下方各來源的停止原因與實際筆數。</p></aside>
+    {% endif %}
+
+    {% set overall_values = report.payload.get('overall', report.payload) %}
+    {% set sentiments = report.payload.get('sentiment_distribution', {}) %}
+    {% set text_item_count = overall_values.get('text_review_count', 0) %}
+    {% set rating_only_count = sentiments.get('rating_only', 0) %}
+    {% set sentiment_meta = report.payload.get('sentiment_analysis', {}) %}
+    <section class="panel analysis-proof">
+      <div class="section-title compact">
+        <div><p class="eyebrow">LOCAL SENTIMENT ANALYSIS</p><h2>這份報告包含情感分析</h2><p>系統已對內容逐筆判定正面、中立或負面；Google 只有星等、沒有文字的項目會標示為「僅星等」。</p></div>
+        {% if sentiment_meta.get('status', 'completed' if report.payload.sample_size else 'no_data') == 'completed' %}<span class="badge status-completed">已完成</span>{% elif report.payload.sample_size %}<span class="badge status-partial">部分完成</span>{% else %}<span class="badge">尚無資料</span>{% endif %}
+      </div>
+      <div class="analysis-proof-grid">
+        <div><strong>{{ text_item_count }}</strong><span>筆有文字內容已分類</span></div>
+        <div><strong>{{ sentiments.get('positive', 0) }}</strong><span>正面</span></div>
+        <div><strong>{{ sentiments.get('neutral', 0) }}</strong><span>中立</span></div>
+        <div><strong>{{ sentiments.get('negative', 0) }}</strong><span>負面</span></div>
+        <div><strong>{{ rating_only_count }}</strong><span>僅星等</span></div>
+      </div>
+      <p class="muted analysis-proof-note">逐筆情感分類會結合多語模型、台灣常見口語與 Google 星等校準；明確抱怨仍可覆蓋高星等，明確稱讚也可覆蓋模型誤判。OpenAI 模型主要用於面向、摘要與報告追問{% if sentiment_meta.get('models') %}。本次情感模型：{{ sentiment_meta.get('models')|join('、') }}{% endif %}。</p>
+    </section>
+
+    <section class="panel report-source-pages">
+      <div id="report-tabs" class="source-tabs" role="tablist" aria-label="報告來源分頁">
+        <button class="secondary source-tab active" role="tab" aria-selected="true" type="button" data-report-source="overall">整體</button>
+        {% for source in report.payload.collection.sources %}<button class="secondary source-tab" role="tab" aria-selected="false" type="button" data-report-source="{{ source }}">{{ {'google_maps':'Google','ptt':'PTT','dcard':'Dcard'}.get(source, source) }}</button>{% endfor %}
+      </div>
+      {% for key, label, values in [('overall', '跨平台整體', report.payload.overall)] %}
+      <article class="report-source-page" data-report-panel="{{ key }}">
+        <h2>{{ label }}</h2><p class="muted">每筆評論、文章與留言等權，共 {{ values.sample_size }} 筆。</p>
+        <div class="mini-metrics"><span>正面 <strong>{{ values.sentiment_distribution.get('positive', 0) }}</strong></span><span>中立 <strong>{{ values.sentiment_distribution.get('neutral', 0) }}</strong></span><span>負面 <strong>{{ values.sentiment_distribution.get('negative', 0) }}</strong></span></div>
+      </article>
+      {% endfor %}
+      {% for source in report.payload.collection.sources %}
+      {% set values = report.payload.sources.get(source) %}
+      <article class="report-source-page" data-report-panel="{{ source }}" hidden>
+        <h2>{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(source, source) }}</h2>
+        {% if values %}<p class="muted">此頁只計算該來源，共 {{ values.sample_size }} 筆；星等只會出現在 Google Maps。</p>
+        <div class="mini-metrics"><span>正面 <strong>{{ values.sentiment_distribution.get('positive', 0) }}</strong></span><span>中立 <strong>{{ values.sentiment_distribution.get('neutral', 0) }}</strong></span><span>負面 <strong>{{ values.sentiment_distribution.get('negative', 0) }}</strong></span>{% if source == 'google_maps' %}<span>星等衝突 <strong>{{ values.rating_text_conflict_count }}</strong></span>{% endif %}</div>
+        <div class="aspect-chips">{% for aspect, counts in values.aspects.items() %}<span>{{ counts.label }} +{{ counts.get('positive', 0) }} / −{{ counts.get('negative', 0) }}</span>{% else %}<span class="muted">尚無面向資料</span>{% endfor %}</div>
+        {% else %}<p class="muted">此來源沒有可分析資料；請查看蒐集狀態與錯誤。</p>{% endif %}
+      </article>
+      {% endfor %}
+    </section>
+
+    <section class="metrics-grid">
+      <article class="metric"><span>正面</span><strong>{{ sentiments.get('positive', 0) }}</strong></article>
+      <article class="metric"><span>中立</span><strong>{{ sentiments.get('neutral', 0) }}</strong></article>
+      <article class="metric"><span>負面</span><strong>{{ sentiments.get('negative', 0) }}</strong></article>
+      <article class="metric"><span>星等衝突</span><strong>{{ report.payload.rating_text_conflict_count }}</strong></article>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">SOURCE COMPOSITION</p>
+      <h2>來源與內容組成</h2>
+      <div class="source-breakdown">
+        {% for source, values in report.payload.sources.items() %}
+        <article>
+          <span class="badge source-{{ source }}">{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(source, source) }}</span>
+          <h3>{{ values.sample_size }} 筆</h3>
+          <p class="muted">正面 {{ values.sentiment_distribution.get('positive', 0) }} · 中立 {{ values.sentiment_distribution.get('neutral', 0) }} · 負面 {{ values.sentiment_distribution.get('negative', 0) }}</p>
+          {% set collection = report.payload.collection.sources.get(source, {}) %}
+          <small>{{ collection.get('post_count', 0) }} 篇文章 · {{ collection.get('comment_count', 0) }} 則回應{% if collection.get('stop_reason') %} · {{ collection.get('stop_reason') }}{% endif %}{% if collection.get('error') %} · {{ collection.get('error') }}{% endif %}</small>
+        </article>
+        {% endfor %}
+      </div>
+      <div class="mini-metrics content-composition">
+        {% for content_type, count in report.payload.content_types.items() %}<span>{{ {'review':'Google 評論','post':'文章','comment':'留言／推文'}.get(content_type, content_type) }} <strong>{{ count }}</strong></span>{% endfor %}
+      </div>
+      <div class="collection-status-grid">
+        {% for source, collection in report.payload.collection.sources.items() %}
+        <div><strong>{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(source, source) }}</strong><span class="badge status-{{ collection.get('status', 'unknown')|lower }}">{{ collection.get('status', 'UNKNOWN') }}</span><small>{{ collection.get('actual_count', 0) }} 筆{% if collection.get('stop_reason') %} · {{ collection.get('stop_reason') }}{% endif %}{% if collection.get('error') %} · {{ collection.get('error') }}{% endif %}</small></div>
+        {% endfor %}
+      </div>
+      {% if report.payload.platform_signals %}<p class="muted">PTT 訊號：推 {{ report.payload.platform_signals.get('push', 0) }} · 噓 {{ report.payload.platform_signals.get('boo', 0) }} · 箭頭 {{ report.payload.platform_signals.get('neutral', 0) }}</p>{% endif %}
+    </section>
+
+    <section class="panel executive">
+      <p class="eyebrow">EXECUTIVE SUMMARY</p>
+      <h2>管理摘要</h2>
+      <p class="summary">{{ report.payload.executive.summary }}</p>
+      <div class="insight-grid">
+        <div><h3>主要優勢</h3><ul>{% for item in report.payload.executive.strengths %}<li>{{ item }}</li>{% endfor %}</ul></div>
+        <div><h3>待改善</h3><ul>{% for item in report.payload.executive.weaknesses %}<li>{{ item }}</li>{% endfor %}</ul></div>
+        <div><h3>風險</h3><ul>{% for item in report.payload.executive.risks %}<li>{{ item }}</li>{% endfor %}</ul></div>
+        <div><h3>建議行動</h3><ul>{% for item in report.payload.executive.recommendations %}<li>{{ item }}</li>{% endfor %}</ul></div>
+      </div>
+      {% if report.payload.executive.source_differences %}<div><h3>平台差異</h3><ul>{% for item in report.payload.executive.source_differences %}<li>{{ item }}</li>{% endfor %}</ul></div>{% endif %}
+    </section>
+
+    <section class="two-column">
+      <article class="panel">
+        <h2>情感分析結果</h2>
+        <p class="muted">依逐筆文字內容分類；「僅星等」不會被當成文字情緒。</p>
+        {% set total = report.payload.sample_size if report.payload.sample_size else 1 %}
+        {% for key, label in [('positive','正面'),('neutral','中立'),('negative','負面'),('rating_only','僅星等')] %}
+        {% set value = sentiments.get(key, 0) %}
+        <div class="bar-row"><span>{{ label }}</span><div class="bar-track"><div class="bar bar-{{ key }}" style="width: {{ value / total * 100 }}%"></div></div><b>{{ value }}</b></div>
+        {% endfor %}
+      </article>
+      <article class="panel">
+        <h2>面向洞察</h2>
+        {% for key, item in report.payload.aspects.items() %}
+        <div class="aspect-row"><strong>{{ item.label }}</strong><span class="positive-text">+{{ item.get('positive', 0) }}</span><span class="negative-text">−{{ item.get('negative', 0) }}</span></div>
+        {% else %}<p class="muted">尚無雲端面向資料。</p>{% endfor %}
+      </article>
+    </section>
+
+    <section class="two-column">
+      <article class="panel">
+        <h2>Google Maps 星等分布</h2>
+        {% for value in [5,4,3,2,1] %}
+        {% set count = report.payload.rating_distribution.get(value|string, 0) %}
+        <div class="bar-row"><span>{{ value }} 星</span><div class="bar-track"><div class="bar bar-rating" style="width: {{ count / total * 100 }}%"></div></div><b>{{ count }}</b></div>
+        {% endfor %}
+      </article>
+      <article class="panel">
+        <h2>時間趨勢</h2>
+        <div class="table-wrap">
+          <table><thead><tr><th>月份</th><th>正面</th><th>中立</th><th>負面</th></tr></thead><tbody>
+          {% for month, values in report.payload.monthly_trend.items() %}
+          <tr><td>{{ month }}</td><td>{{ values.get('positive', 0) }}</td><td>{{ values.get('neutral', 0) }}</td><td>{{ values.get('negative', 0) }}</td></tr>
+          {% else %}<tr><td colspan="4" class="empty">日期精度不足，暫無月度趨勢。</td></tr>{% endfor %}
+          </tbody></table>
+        </div>
+      </article>
+    </section>
+
+    <section class="two-column">
+      <article class="panel"><h2>常見稱讚</h2><ul class="point-list">{% for item in report.payload.common_praise %}<li>{{ item.text }}{% if item.count > 1 %}<b>× {{ item.count }}</b>{% endif %}</li>{% else %}<li class="muted">尚無足夠面向重點。</li>{% endfor %}</ul></article>
+      <article class="panel"><h2>常見抱怨</h2><ul class="point-list">{% for item in report.payload.common_complaints %}<li>{{ item.text }}{% if item.count > 1 %}<b>× {{ item.count }}</b>{% endif %}</li>{% else %}<li class="muted">尚無足夠面向重點。</li>{% endfor %}</ul></article>
+    </section>
+
+    <section class="two-column">
+      <article class="panel"><h2>正面代表內容</h2><div class="representative-list">{% for item in report.payload.representative_positive %}<blockquote><span class="badge source-{{ item.source }}">{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(item.source, item.source) }}</span>{% if item.title %}<strong>{{ item.title }}</strong>{% endif %}<p>{{ item.text }}</p></blockquote>{% else %}<p class="muted">尚無正面代表內容。</p>{% endfor %}</div></article>
+      <article class="panel"><h2>負面代表內容</h2><div class="representative-list">{% for item in report.payload.representative_negative %}<blockquote><span class="badge source-{{ item.source }}">{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(item.source, item.source) }}</span>{% if item.title %}<strong>{{ item.title }}</strong>{% endif %}<p>{{ item.text }}</p></blockquote>{% else %}<p class="muted">尚無負面代表內容。</p>{% endfor %}</div></article>
+    </section>
+
+    {% if report.payload.top_threads %}
+    <section class="panel">
+      <h2>熱門討論串</h2>
+      <div class="thread-list">
+        {% for thread in report.payload.top_threads %}
+        <article><span class="badge source-{{ thread.source }}">{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(thread.source, thread.source) }}</span><strong>{% if thread.source_url %}<a href="{{ thread.source_url }}" target="_blank" rel="noopener noreferrer">{{ thread.title }}</a>{% else %}{{ thread.title }}{% endif %}</strong><small>{{ thread.item_count }} 筆內容{% if thread.interaction_count %} · 互動 {{ thread.interaction_count }}{% endif %}{% if thread.board %} · {{ thread.board }}{% endif %}</small></article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <p class="report-meta">報告模型：{{ report.model_id or '未使用 OpenAI' }} · 產生時間：{{ report.payload.generated_at }}</p>
+
+    <section class="panel">
+      <div class="section-title compact">
+        <div><h2>逐筆內容</h2><p>原文只保存在本機；作者不顯示，雲端只收到匿名且遮罩常見個資後的內容。</p></div>
+        <div class="actions"><a class="secondary link-button" href="/api/reports/{{ report.id }}/export?format=csv">CSV</a><a class="secondary link-button" href="/api/reports/{{ report.id }}/export?format=json">JSON</a></div>
+      </div>
+      <div class="review-priority">
+        <div><strong>先看需要改善的地方</strong><span>預設以負面評論優先排列；點選情緒即可快速切換。</span></div>
+        <div id="sentiment-tabs" class="sentiment-tabs" aria-label="情緒快速切換">
+          <button class="sentiment-tab active" type="button" data-sentiment="">全部（負面優先）</button>
+          <button class="sentiment-tab negative" type="button" data-sentiment="negative">負面</button>
+          <button class="sentiment-tab neutral" type="button" data-sentiment="neutral">中立</button>
+          <button class="sentiment-tab positive" type="button" data-sentiment="positive">正面</button>
+        </div>
+      </div>
+      <div id="source-tabs" class="source-tabs" role="tablist" aria-label="來源分頁">
+        <button class="secondary source-tab active" role="tab" aria-selected="true" type="button" data-source="">整體</button>
+        {% for source in report.payload.collection.sources %}<button class="secondary source-tab" role="tab" aria-selected="false" type="button" data-source="{{ source }}">{{ {'google_maps':'Google','ptt':'PTT','dcard':'Dcard'}.get(source, source) }}</button>{% endfor %}
+      </div>
+      <form id="review-filters" class="filter-grid">
+        <input id="filter-q" aria-label="搜尋評論文字" placeholder="搜尋評論文字">
+        <select id="filter-source" aria-label="篩選來源"><option value="">全部來源</option>{% for source in report.payload.collection.sources %}<option value="{{ source }}">{{ {'google_maps':'Google Maps','ptt':'PTT','dcard':'Dcard'}.get(source, source) }}</option>{% endfor %}</select>
+        <select id="filter-content-type" aria-label="篩選內容類型"><option value="">全部類型</option><option value="review">評論</option><option value="post">文章</option><option value="comment">留言／推文</option></select>
+        <select id="filter-sentiment" aria-label="篩選情緒"><option value="">全部情緒</option><option value="positive">正面</option><option value="neutral">中立</option><option value="negative">負面</option><option value="rating_only">僅星等</option></select>
+        <select id="filter-rating" aria-label="篩選星等"><option value="">全部星等</option>{% for value in [5,4,3,2,1] %}<option value="{{ value }}">{{ value }} 星</option>{% endfor %}</select>
+        <select id="filter-aspect" aria-label="篩選面向"><option value="">全部面向</option>{% for value, label in [('product_quality','產品／品質'),('service','服務'),('price_value','價格／價值'),('environment','環境'),('speed_wait','效率／等候'),('convenience_accessibility','便利／可及性'),('brand_reputation','品牌聲譽'),('marketing_communication','行銷／溝通'),('workplace','職場／雇主'),('trust_safety','信任／安全'),('other','其他')] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+        <button class="secondary" type="submit">套用</button>
+      </form>
+      <div id="reviews" class="review-list"></div>
+      <div class="pagination"><button id="prev-page" class="secondary">上一頁</button><span id="page-info" aria-live="polite"></span><button id="next-page" class="secondary">下一頁</button></div>
+    </section>
+
+    <section class="panel qa-panel">
+      <p class="eyebrow">GROUNDED Q&A</p>
+      <h2>追問這份報告</h2>
+      <p class="muted">系統會在本機找出最相關的 20 筆內容，再請 OpenAI 依證據回答；證據會標示來源與討論串，不顯示作者。</p>
+      <div id="chat" class="chat" aria-live="polite" aria-label="報告問答紀錄"></div>
+      <form id="question-form" class="question-form">
+        <textarea id="question" required minlength="2" aria-label="報告追問" placeholder="例如：顧客對服務速度最常抱怨什麼？"></textarea>
+        <select id="question-model"><option value="{{ default_model }}">GPT-5.4 mini</option><option value="{{ premium_model }}">GPT-5.6 Sol</option></select>
+        <button class="primary" type="submit">送出問題</button>
+      </form>
+    </section>
+  </main>
+  <script src="{{ url_for('static', path='report.js') }}" defer></script>
+</body>
+</html>

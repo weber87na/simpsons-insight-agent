@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>跨平台口碑分析 Agent</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='multi-source.css') }}">
+</head>
+<body class="home-page">
+  <a class="skip-link" href="#subject-panel">跳到分析設定</a>
+  <main class="shell">
+    <div class="site-bar" id="top">
+      <a href="#subject-panel" aria-label="前往設定分析"><strong>口碑雷達!</strong><span>REVIEW AGENT</span></a>
+    </div>
+
+    <details class="warning source-policy">
+      <summary><strong>來源與使用限制</strong><span>展開閱讀</span></summary>
+      <p>請自行確認資料使用權限。Dcard 僅處理你指定的公開文章 URL 或合法取得的檔案，不登入、不搜尋全站、不展開隱藏內容；PTT 僅使用公開板內搜尋且不繞過存取限制。請先閱讀 <a href="https://www.ptt.cc/index.ua.html" target="_blank" rel="noopener noreferrer">PTT 條款</a>及 <a href="https://www.dcard.tw/terms" target="_blank" rel="noopener noreferrer">Dcard 使用協議</a>。</p>
+    </details>
+
+    <nav class="journey-nav" aria-label="分析流程">
+      <a href="#subject-panel"><span>01</span>設定主題</a>
+      <a href="#source-panel"><span>02</span>選擇來源</a>
+      <a href="#job-preview"><span>03</span>確認任務</a>
+      <a href="#job-progress"><span>04</span>查看進度</a>
+      <a href="#recent-jobs"><span>05</span>最近任務</a>
+    </nav>
+
+    <section class="panel workflow-panel" id="subject-panel">
+      <div class="section-title">
+        <span>01</span>
+        <div><p class="section-kicker">從一個名字開始</p><h2>設定分析主題</h2><p>只要設定一次；名稱與別名會自動成為可搜尋來源的關鍵字。</p></div>
+      </div>
+      <div class="settings-grid subject-grid">
+        <label>類型
+          <select id="subject-kind"><option value="business">商家</option><option value="brand">品牌</option></select>
+          <small class="field-help">決定分析主題的分類（必填）</small>
+        </label>
+        <label>名稱
+          <input id="subject-name" required maxlength="500" placeholder="例如：鼎泰豐">
+          <small class="field-help">報告標題與主要搜尋詞（必填）</small>
+        </label>
+        <label>城市／地址（選填）
+          <input id="subject-address" maxlength="1000" placeholder="例如：台北市信義區">
+          <small class="field-help">主要用來定位 Google Maps 分店</small>
+        </label>
+        <label>別名（選填，逗號分隔）
+          <input id="subject-aliases" maxlength="1000" placeholder="Din Tai Fung, 鼎泰豐信義店">
+          <small class="field-help">英文名、舊名或常見稱呼；會自動帶入 PTT</small>
+        </label>
+      </div>
+      <form id="search-form" class="inline-form">
+        <label>跨來源搜尋關鍵字（選填，可用逗號分隔）
+          <input id="query" minlength="2" placeholder="留空：自動使用名稱＋城市／地址＋別名">
+          <small class="field-help">會套用到 Google Maps 候選與 PTT 標題搜尋；Dcard 目前仍需指定公開文章。</small>
+        </label>
+        <div class="inline-form-action">
+          <span class="inline-form-spacer" aria-hidden="true">&nbsp;</span>
+          <button class="secondary" type="submit">搜尋 Google Maps 候選</button>
+        </div>
+      </form>
+      <p id="search-scope" class="search-scope">目前會自動使用名稱與別名；地址只用於協助定位 Google Maps 分店。</p>
+      <div id="search-status" class="status hidden" role="status" aria-live="polite"></div>
+      <div id="candidates" class="candidate-grid"></div>
+    </section>
+
+    <section class="panel workflow-panel" id="source-panel">
+      <div class="section-title">
+        <span>02</span>
+        <div><p class="section-kicker">同一個主題，多個街坊聲音</p><h2>選擇資料來源</h2><p>這裡只決定要納入哪些平台，不是再次輸入主題；可搜尋來源會沿用上方關鍵字。</p></div>
+      </div>
+
+      <form id="job-form" class="source-stack">
+        <article class="source-card">
+          <label class="source-toggle"><input id="source-google" type="checkbox"> <strong>Google Maps</strong><span>分店評論 · 使用上方搜尋結果</span></label>
+          <div class="source-fields" data-source-fields="google">
+            <label class="wide">Google Maps 店家
+              <input id="google-url" type="url" placeholder="先在上方搜尋並選擇正確分店，或貼上 Maps URL">
+              <small class="field-help">這是要抓評論的實際分店，不是另一組搜尋關鍵字。</small>
+            </label>
+            <label class="source-control">最多評論數<input id="google-max" type="number" min="1" max="500" value="{{ max_reviews }}"><small class="field-help">抓取上限</small></label>
+            <label class="source-control">排序<select id="google-sort"><option value="newest">最新</option><option value="relevant">最相關</option></select><small class="field-help">決定評論載入順序</small></label>
+            <label class="check source-inline-check"><input id="headless" type="checkbox" {% if default_headless %}checked{% endif %}> 使用無頭瀏覽器</label>
+          </div>
+        </article>
+
+        <article class="source-card">
+          <label class="source-toggle"><input id="source-ptt" type="checkbox"> <strong>PTT</strong><span>指定看板的標題搜尋與整串推文</span></label>
+          <div class="source-fields" data-source-fields="ptt">
+            <label>看板（必要，逗號分隔）<input id="ptt-boards" placeholder="例如：Food, Lifeismoney"><small class="field-help">PTT 必須指定板面，系統不會搜尋全站。</small></label>
+            <div class="source-auto-field"><span>搜尋詞（自動帶入）</span><strong id="ptt-keyword-preview">名稱與別名</strong><small class="field-help">使用上方關鍵字；留空則使用名稱與別名。</small></div>
+            <label>起始日<input id="ptt-date-from" type="date"></label>
+            <label>結束日<input id="ptt-date-to" type="date"></label>
+            <label>文章上限<input id="ptt-max-posts" type="number" min="1" max="200" value="50"></label>
+            <label>推文上限<input id="ptt-max-comments" type="number" min="0" max="2000" value="500"></label>
+            <label>每串推文上限<input id="ptt-per-thread" type="number" min="0" max="100" value="100"></label>
+          </div>
+        </article>
+
+        <article class="source-card">
+          <label class="source-toggle"><input id="source-dcard" type="checkbox"> <strong>Dcard</strong><span>指定公開文章或合法匯入資料</span></label>
+          <div class="source-fields" data-source-fields="dcard">
+            <div class="source-notice wide"><strong>為什麼 Dcard 要網址？</strong><p>Dcard 目前採「指定公開文章」模式，不搜尋全站、不自動翻頁，也不呼叫未公開 API；這是為了避免抓取不相關或未授權內容。若要分析某個關鍵字，請先從 Dcard 複製符合的公開文章網址，或使用下方 CSV／JSON 匯入。</p></div>
+            <label class="wide">公開文章 URL（每行一個）<textarea id="dcard-urls" rows="4" placeholder="https://www.dcard.tw/f/food/p/123456789"></textarea><small class="field-help">格式必須是 https://www.dcard.tw/f/看板/p/文章ID</small></label>
+            <label>起始日<input id="dcard-date-from" type="date"></label>
+            <label>結束日<input id="dcard-date-to" type="date"></label>
+            <label>文章上限<input id="dcard-max-posts" type="number" min="1" max="100" value="50"></label>
+            <label>留言上限<input id="dcard-max-comments" type="number" min="0" max="2000" value="500"></label>
+            <label>每串留言上限<input id="dcard-per-thread" type="number" min="0" max="100" value="100"></label>
+            <div class="upload-field wide">
+              <label>Dcard CSV／JSON<input id="dcard-file" type="file" accept=".csv,.json"></label>
+              <button id="upload-dcard" class="secondary" type="button">驗證並加入匯入檔</button>
+              <a href="/api/source-imports/dcard/template?format=csv">下載 CSV 範本</a>
+              <span id="dcard-import-status" class="muted">尚未加入檔案</span>
+            </div>
+            <label class="check wide"><input id="dcard-terms" type="checkbox"> 我確認只匯入有權使用的公開內容，並已閱讀 <a href="https://www.dcard.tw/terms" target="_blank" rel="noopener noreferrer">Dcard 使用協議</a>限制。</label>
+          </div>
+        </article>
+
+        <label>報告摘要模型（選填）
+          <select id="llm-model"><option value="{{ default_model }}">GPT-5.4 mini（預設）</option><option value="{{ premium_model }}">GPT-5.6 Sol（高品質）</option></select>
+          <small class="field-help">不影響本地逐筆情感分析；主要影響面向、摘要與追問。</small>
+        </label>
+        <button class="primary" type="submit">預覽任務設定</button>
+      </form>
+    </section>
+
+    <section id="job-preview" class="panel workflow-panel hidden">
+      <div class="section-title"><span>03</span><div><h2>確認任務</h2><p>確認主題、來源與上限後才會開始蒐集。</p></div></div>
+      <div id="preview-content" class="preview-grid"></div>
+      <div class="actions"><button id="edit-preview" class="secondary" type="button">返回修改</button><button id="create-job" class="primary" type="button">建立並開始蒐集</button></div>
+    </section>
+
+    <section id="job-progress" class="panel workflow-panel hidden">
+      <div class="section-title"><span>04</span><div><h2>任務進度</h2><p id="job-state">等待啟動</p></div></div>
+      <div class="progress" role="progressbar" aria-label="資料蒐集進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-bar"></div></div>
+      <div class="progress-meta"><span id="progress-percent" aria-live="polite">0%</span><span id="job-counts" aria-live="polite">0 / 0</span></div>
+      <p id="job-message" class="muted" role="status" aria-live="polite"></p>
+      <div id="source-progress" class="source-progress" aria-live="polite"></div>
+      <pre id="job-error" class="error hidden" role="alert"></pre>
+      <div class="actions">
+        <button id="resume-job" class="secondary hidden" type="button">繼續蒐集</button>
+        <button id="analyze-job" class="primary hidden" type="button">開始分析目前評論／內容（含情感分析）</button>
+        <button id="cancel-job" class="danger" type="button">取消任務</button>
+        <button id="delete-job" class="danger hidden" type="button">刪除任務與爬文資料</button>
+        <a id="open-report" class="primary link-button hidden" href="#">開啟分析報告</a>
+      </div>
+    </section>
+
+    <section class="panel workflow-panel" id="recent-jobs">
+      <div class="section-title"><span>05</span><div><h2>最近任務</h2><p>來源未完整時可續抓，或確認後分析目前樣本。</p></div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>主題</th><th>來源</th><th>狀態</th><th>進度</th><th>建立時間</th><th></th></tr></thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td>{{ job.business.name }}</td>
+            <td>{% for run in job.source_runs %}<span class="badge source-{{ run.source }}">{{ {'google_maps':'Google','ptt':'PTT','dcard':'Dcard'}.get(run.source, run.source) }}</span> {% endfor %}</td>
+            <td><span class="badge status-{{ job.status|lower }}">{{ job.status }}</span></td>
+            <td>{{ (job.progress * 100)|round|int }}%</td>
+            <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="row-actions">
+              <div class="row-action-buttons">
+                {% if job.report %}<a class="secondary link-button report-link" href="/reports/{{ job.report.id }}">報告</a>{% endif %}
+                {% if job.status in ['COLLECTION_INTERRUPTED','BLOCKED'] or (job.status in ['READY_FOR_ANALYSIS','FAILED'] and not job.collection_complete and job.source_runs|selectattr('collection_complete', 'equalto', false)|list) %}<button class="resume-existing secondary" data-job-id="{{ job.id }}" type="button">續抓</button>{% endif %}
+                {% if job.status in ['READY_FOR_ANALYSIS','COLLECTION_INTERRUPTED','BLOCKED','FAILED'] and job.collected_count > 0 %}<button class="analyze-existing primary" data-job-id="{{ job.id }}" data-complete="{{ 'true' if job.collection_complete else 'false' }}" type="button">開始分析</button>{% endif %}
+                <button class="delete-existing danger" data-job-id="{{ job.id }}" data-job-name="{{ job.business.name }}" type="button">刪除</button>
+              </div>
+            </td>
+          </tr>
+        {% else %}<tr><td colspan="6" class="empty">尚無任務</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</body>
+</html>
