@@ -154,6 +154,8 @@ function buildPayload() {
   return {
     subject: {kind: byId("subject-kind").value, name, address: byId("subject-address").value.trim() || null, aliases},
     sources, llm_model: byId("llm-model").value,
+    auto_plan: byId("auto-plan").checked,
+    planning_options: {start_date: byId("planning-start").value || null, weekly_hours: byId("planning-hours").value ? Number(byId("planning-hours").value) : null, constraints: byId("planning-constraints").value},
   };
 }
 

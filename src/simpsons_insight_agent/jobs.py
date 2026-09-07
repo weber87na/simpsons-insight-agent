@@ -6,15 +6,17 @@ import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from .cloud import OpenAIService, ReviewInsight, build_cloud_batches
 from .config import Settings, get_settings
 from .dateparse import parse_relative_date
 from .db import SessionLocal
+from .decisions import DecisionCoordinator
 from .embeddings import EmbeddingService, vector_to_bytes
 from .forum_sources import DcardSource, PttSource
+from .insights import enrich_report
 from .models import (
     Business,
     CrawlJob,
@@ -30,7 +32,7 @@ from .models import (
 )
 from .privacy import redact_pii
 from .reporting import build_aggregate, deterministic_summary
-from .schemas import BusinessCandidate, CreateJobRequest, GoogleMapsSourceConfig
+from .schemas import BusinessCandidate, CreateJobRequest, GoogleMapsSourceConfig, PlanningOptions
 from .scraper import (
     CrawlResult,
     MapsBlockedError,
@@ -72,18 +74,41 @@ class JobManager:
         self.sentiment = SentimentAnalyzer(self.settings)
         self.embeddings = EmbeddingService(self.settings)
         self.openai = OpenAIService(self.settings)
+        self.decisions = DecisionCoordinator(self.openai, self.queue)
         self._worker: asyncio.Task | None = None
         self._verification_events: dict[str, asyncio.Event] = {}
         self._active_jobs: set[str] = set()
         self._deleting_jobs: set[str] = set()
 
     async def start(self) -> None:
+        await self.decisions.recover()
         if self._worker is None or self._worker.done():
-            self._worker = asyncio.create_task(self._worker_loop(), name="simpsons-insight-agent-worker")
+            self._worker = asyncio.create_task(
+                self._worker_loop(), name="simpsons-insight-agent-worker"
+            )
         async with SessionLocal() as session:
             result = await session.scalars(
                 select(CrawlJob.id).where(
-                    CrawlJob.status.in_({"PENDING_COLLECTION", "ANALYSIS_PENDING"})
+                    or_(
+                        CrawlJob.status.in_({"PENDING_COLLECTION", "ANALYSIS_PENDING"}),
+                        and_(
+                            CrawlJob.auto_plan.is_(True),
+                            CrawlJob.cancel_requested.is_(False),
+                            CrawlJob.collected_count > 0,
+                            or_(
+                                CrawlJob.last_completed_stage.is_(None),
+                                CrawlJob.last_completed_stage == "COLLECTION",
+                            ),
+                            CrawlJob.status.in_(
+                                {
+                                    "READY_FOR_ANALYSIS",
+                                    "COLLECTION_INTERRUPTED",
+                                    "BLOCKED",
+                                    "FAILED",
+                                }
+                            ),
+                        ),
+                    )
                 )
             )
             for job_id in result.all():
@@ -108,12 +133,18 @@ class JobManager:
             (item for item in configs if item.source == "google_maps"),
             None,
         )
-        maps_url = str(google_config.maps_url) if isinstance(google_config, GoogleMapsSourceConfig) else None
+        maps_url = (
+            str(google_config.maps_url)
+            if isinstance(google_config, GoogleMapsSourceConfig)
+            else None
+        )
         subject_key = _subject_key(subject_input.kind, subject_input.name, subject_input.address)
         async with SessionLocal() as session:
             business = None
             if maps_url:
-                business = await session.scalar(select(Business).where(Business.maps_url == maps_url))
+                business = await session.scalar(
+                    select(Business).where(Business.maps_url == maps_url)
+                )
             if business is None:
                 business = await session.scalar(
                     select(Business).where(Business.subject_key == subject_key)
@@ -164,9 +195,7 @@ class JobManager:
                 if missing:
                     raise ValueError(f"找不到 Dcard 匯入批次：{', '.join(sorted(missing))}")
                 invalid = [
-                    item.filename
-                    for item in source_imports
-                    if item.validation_status != "VALID"
+                    item.filename for item in source_imports if item.validation_status != "VALID"
                 ]
                 if invalid:
                     raise ValueError(f"Dcard 匯入批次驗證未通過：{', '.join(invalid)}")
@@ -175,7 +204,9 @@ class JobManager:
                     raise ValueError(f"Dcard 匯入批次已被其他任務使用：{', '.join(used)}")
 
             target_count = sum(_source_target(config.model_dump(mode="json")) for config in configs)
-            legacy_google = google_config if isinstance(google_config, GoogleMapsSourceConfig) else None
+            legacy_google = (
+                google_config if isinstance(google_config, GoogleMapsSourceConfig) else None
+            )
 
             job = CrawlJob(
                 business_id=business.id,
@@ -185,6 +216,8 @@ class JobManager:
                 headless=legacy_google.headless if legacy_google else False,
                 llm_model=request.llm_model or self.settings.openai_model_default,
                 message="任務已排入佇列",
+                auto_plan=request.auto_plan,
+                planning_options=request.planning_options.model_dump(mode="json"),
             )
             session.add(job)
             await session.flush()
@@ -220,15 +253,15 @@ class JobManager:
                     raise LookupError("找不到任務")
                 source_runs = list(
                     (
-                        await session.scalars(
-                            select(JobSource).where(JobSource.job_id == job_id)
-                        )
+                        await session.scalars(select(JobSource).where(JobSource.job_id == job_id))
                     ).all()
                 )
                 has_incomplete_source = any(
                     not source_run.collection_complete for source_run in source_runs
                 )
-                can_resume_ready = job.status == "READY_FOR_ANALYSIS" and not job.collection_complete
+                can_resume_ready = (
+                    job.status == "READY_FOR_ANALYSIS" and not job.collection_complete
+                )
                 can_resume_failed = job.status == "FAILED" and has_incomplete_source
                 if (
                     job.status not in {"COLLECTION_INTERRUPTED", "BLOCKED"}
@@ -383,9 +416,7 @@ class JobManager:
                             ReviewEmbedding.review_id.in_(orphan_review_ids)
                         )
                     )
-                    await session.execute(
-                        delete(Review).where(Review.id.in_(orphan_review_ids))
-                    )
+                    await session.execute(delete(Review).where(Review.id.in_(orphan_review_ids)))
 
                 await session.execute(delete(CrawlJob).where(CrawlJob.id == job_id))
                 await session.commit()
@@ -410,10 +441,15 @@ class JobManager:
                 await self._process_job(job_id)
             except asyncio.CancelledError:
                 raise
+            except Exception:
+                logger.exception("Background job failed: %s", job_id)
             finally:
                 self.queue.task_done()
 
     async def _process_job(self, job_id: str) -> None:
+        if job_id.startswith("decision:"):
+            await self.decisions.run(job_id.split(":", 1)[1])
+            return
         if job_id in self._deleting_jobs:
             return
         self._active_jobs.add(job_id)
@@ -426,8 +462,24 @@ class JobManager:
                 await self._process_analysis(job_id)
             elif status == "PENDING_COLLECTION":
                 await self._process_collection(job_id)
+                await self._auto_analyze(job_id)
+            elif status in {"READY_FOR_ANALYSIS", "COLLECTION_INTERRUPTED", "BLOCKED", "FAILED"}:
+                await self._auto_analyze(job_id)
         finally:
             self._active_jobs.discard(job_id)
+
+    async def _auto_analyze(self, job_id: str) -> None:
+        async with SessionLocal() as session:
+            job = await session.get(CrawlJob, job_id)
+        if (
+            job
+            and job.auto_plan
+            and not job.cancel_requested
+            and job.collected_count > 0
+            and job.last_completed_stage in {None, "COLLECTION"}
+            and job.status in {"READY_FOR_ANALYSIS", "COLLECTION_INTERRUPTED", "BLOCKED", "FAILED"}
+        ):
+            await self.start_analysis(job_id, model=None, accept_partial_collection=True)
 
     async def _process_collection(self, job_id: str) -> None:
         async with SessionLocal() as session:
@@ -612,12 +664,11 @@ class JobManager:
                 attempt_count=source_run.attempt_count + 1,
             )
             await self._set_job(job_id, message=f"正在蒐集 {source_run.source}")
-            known_keys, already_collected = await self._source_checkpoint(
-                job_id, source_run.source
-            )
+            known_keys, already_collected = await self._source_checkpoint(job_id, source_run.source)
             _, existing_posts, existing_comments = await self._source_counts(
                 job_id, source_run.source
             )
+
             async def on_batch(items: list[CollectedItem]) -> None:
                 await self._persist_items(job_id, business.id, items)
 
@@ -631,12 +682,7 @@ class JobManager:
             ) -> None:
                 current = posts + comments
                 source_fraction = min(current / max(target, 1), 1.0)
-                progress = (
-                    0.05
-                    + 0.45
-                    * (_source_index + source_fraction)
-                    / source_total
-                )
+                progress = 0.05 + 0.45 * (_source_index + source_fraction) / source_total
                 await self._set_source_run(
                     _source_run.id,
                     collected_count=current,
@@ -767,11 +813,7 @@ class JobManager:
 
         async with SessionLocal() as session:
             refreshed = list(
-                (
-                    await session.scalars(
-                        select(JobSource).where(JobSource.job_id == job_id)
-                    )
-                ).all()
+                (await session.scalars(select(JobSource).where(JobSource.job_id == job_id))).all()
             )
         count = await self._job_collected_count(job_id)
         complete = all(run.collection_complete for run in refreshed)
@@ -945,9 +987,14 @@ class JobManager:
                 progress=0.9,
                 message="正在產生報告",
             )
-            _, summary_cloud_ok = await self._build_report(
+            report, summary_cloud_ok = await self._build_report(
                 job_id, business.id, job.llm_model, cloud_ok
             )
+            if job.auto_plan:
+                self.decisions.cloud = self.openai
+                await self.decisions.start(
+                    report.id, PlanningOptions.model_validate(job.planning_options)
+                )
             if cloud_ok and not summary_cloud_ok:
                 partial_reasons.append("OpenAI 管理摘要失敗。")
             await self._set_job(
@@ -1138,9 +1185,7 @@ class JobManager:
                         model_id="ptt-signal-rule",
                         language=results[index].language,
                     )
-                results[index] = calibrate_sentiment(
-                    results[index], review.text, review.rating
-                )
+                results[index] = calibrate_sentiment(results[index], review.text, review.rating)
             fallback_count += sum(
                 bool(review.text) and result.model_id.startswith("heuristic-fallback")
                 for review, result in zip(batch, results, strict=True)
@@ -1239,9 +1284,7 @@ class JobManager:
                 )
             await session.commit()
 
-    async def _cloud_analysis(
-        self, job_id: str, reviews: list[Review], model: str
-    ) -> None:
+    async def _cloud_analysis(self, job_id: str, reviews: list[Review], model: str) -> None:
         async with SessionLocal() as session:
             completed_ids = set(
                 (
@@ -1255,7 +1298,9 @@ class JobManager:
                 ).all()
             )
         payload = [
-            item for item in build_anonymized_payload(reviews) if item["review_key"] not in completed_ids
+            item
+            for item in build_anonymized_payload(reviews)
+            if item["review_key"] not in completed_ids
         ]
         batches = build_cloud_batches(
             payload,
@@ -1297,6 +1342,9 @@ class JobManager:
                         if stored_insight is None:
                             continue
                         analysis.aspects = [str(item.value) for item in stored_insight.aspects]
+                        analysis.negative_aspects = [
+                            str(item.value) for item in stored_insight.negative_aspects
+                        ]
                         analysis.key_points = stored_insight.key_points
                         analysis.cloud_model_id = model
                         analysis.cloud_status = "COMPLETED"
@@ -1310,6 +1358,9 @@ class JobManager:
         self, job_id: str, business_id: str, model: str, cloud_ok: bool
     ) -> tuple[Report, bool]:
         async with SessionLocal() as session:
+            existing_report = await session.scalar(select(Report).where(Report.job_id == job_id))
+            if existing_report and existing_report.payload.get("schema_version") in {3, 4} and "analytics_items" in existing_report.payload:
+                return existing_report, existing_report.status == "READY"
             business = await session.get(Business, business_id)
             job = await session.get(CrawlJob, job_id)
             result = await session.execute(
@@ -1367,7 +1418,9 @@ class JobManager:
             source_runs = list(
                 (
                     await session.scalars(
-                        select(JobSource).where(JobSource.job_id == job_id).order_by(JobSource.ordinal)
+                        select(JobSource)
+                        .where(JobSource.job_id == job_id)
+                        .order_by(JobSource.ordinal)
                     )
                 ).all()
             )
@@ -1424,7 +1477,23 @@ class JobManager:
             else:
                 report.model_id = model if cloud_ok else None
                 report.status = "READY" if summary_cloud_ok else "PARTIAL"
+                aggregate.update(
+                    {
+                        key: report.payload[key]
+                        for key in (
+                            "schema_version",
+                            "analytics_items",
+                            "topics",
+                            "topic_analysis",
+                            "trends",
+                            "decision",
+                        )
+                        if key in report.payload
+                    }
+                )
                 report.payload = aggregate
+            await session.flush()
+            await enrich_report(session, report, self.settings.embedding_model)
             await session.commit()
             await session.refresh(report)
             return report, summary_cloud_ok
@@ -1572,9 +1641,7 @@ def _stage_at_least(current: str | None, expected: str) -> bool:
 
 
 def _subject_key(kind: str, name: str, address: str | None) -> str:
-    normalized = "|".join(
-        part.strip().casefold() for part in (kind, name, address or "")
-    )
+    normalized = "|".join(part.strip().casefold() for part in (kind, name, address or ""))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 

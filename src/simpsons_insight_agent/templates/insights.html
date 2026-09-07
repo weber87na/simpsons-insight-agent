@@ -1,0 +1,73 @@
+<section class="panel" id="insights-panel">
+  <h2>營運分析：主題與時間趨勢</h2>
+  <nav class="actions" aria-label="營運分析區段"><a href="#analytics-summary">總覽</a><a href="#trend-charts">趨勢與情緒</a><a href="#channel-table">來源／頻道</a><a href="#thread-table">討論串</a><a href="#keyword-cloud">文字探索</a><a href="#topic-comparison-editor">議題比較</a><a href="#decision-panel">改善工作</a></nav>
+  <p>檢視已蒐集樣本的變化；負評比例以已分類文字為分母。原報告抱怨分群涵蓋文字負評；自訂議題卡可查詢全部已套用樣本。</p>
+  <form id="trend-form" class="filter-grid">
+    <label>起始日<input type="date" id="trend-from"></label>
+    <label>結束日<input type="date" id="trend-to"></label>
+    <label>時間區間<select id="trend-interval"><option value="month">每月</option><option value="week">每週</option><option value="day">每日（日精度資料）</option></select></label>
+    <label>來源<select id="trend-source"><option value="">全部來源</option>{% for source in report.payload.collection.sources %}<option value="{{ source }}">{{ source }}</option>{% endfor %}</select></label>
+    <label>主題<select id="trend-topic"><option value="">全部主題</option></select></label>
+    <label>內容類型<select id="analytics-filter-type"><option value="">全部</option><option value="review">評論</option><option value="post">主文</option><option value="comment">回應</option></select></label>
+    <label>情緒<select id="analytics-filter-sentiment"><option value="">全部</option><option value="positive">正面</option><option value="neutral">中立</option><option value="negative">負面</option><option value="rating_only">僅星等</option><option value="unknown">未知</option></select></label>
+    <label>面向<select id="analytics-filter-aspect"><option value="">全部</option>{% for k,label in [('service','服務'),('speed_wait','等候'),('product_quality','品質'),('price_value','價格'),('environment','環境'),('other','其他')] %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>看板<input id="analytics-filter-board" placeholder="精確看板名稱"></label>
+    <label>文字包含<input id="analytics-filter-q" maxlength="500"></label>
+    <label>星等<select id="analytics-filter-rating"><option value="">全部</option>{% for n in range(1,6) %}<option>{{ n }}</option>{% endfor %}</select></label>
+    <label>包含任一詞<input id="analytics-filter-any" placeholder="以頓號或逗號分隔"></label>
+    <label>必須包含<input id="analytics-filter-all" placeholder="每個詞都需符合"></label>
+    <label>排除詞<input id="analytics-filter-exclude" placeholder="任一命中即排除"></label>
+    <button class="secondary">套用條件／重試</button>
+  </form>
+  <div class="actions"><button type="button" id="all-evidence" class="secondary">查看同條件證據</button><a id="filtered-csv">明細 CSV</a><a id="filtered-json">明細 JSON</a><a id="trend-csv">趨勢 CSV</a><a id="filtered-print" target="_blank" rel="noopener">列印／另存 PDF</a></div>
+  <div id="analytics-summary" class="insight-cards"></div>
+  <div id="distribution-charts" class="two-column"></div><p id="distribution-note"></p>
+  <label><input type="checkbox" id="trend-average" checked>顯示平均線（包含空期間）</label>
+  <p id="trend-note" role="status"></p><div id="trend-charts" class="two-column"></div>
+  <details><summary>趨勢資料表</summary><div id="trend-table" class="table-wrap"></div></details>
+  <h3>來源／頻道排行</h3>
+  <div class="actions"><label>分組<select id="channel-group"><option value="channel">頻道排行</option><option value="source">來源排行</option></select></label><label>排序<select id="channel-sort"><option value="sample_count">樣本數</option><option value="negative_count">負面筆數</option><option value="negative_ratio">負評比例（請同時檢視分母）</option></select></label><label>呈現<select id="channel-view"><option value="both">圖表與表格</option><option value="chart">圖表</option><option value="table">表格</option></select></label><button type="button" id="channel-retry" class="secondary">重試排行</button></div>
+  <p id="channel-status" role="status"></p><div id="channel-chart"></div><div id="channel-table" class="table-wrap"></div>
+  <h3>已蒐集討論串</h3><p>平台回應總數不代表本報告已收錄全部內容。</p>
+  <div class="actions"><label>檢視<select id="content-mode"><option value="threads">討論串</option><option value="items">內容明細</option></select></label><label>討論串排序<select id="thread-sort"><option value="collected_count">已蒐集內容數</option><option value="reported_reply_count">平台回應數</option><option value="latest_date">最近內容日期</option></select></label><label>明細排序<select id="content-sort"><option value="date_desc">日期新到舊</option><option value="date_asc">日期舊到新</option></select></label><button id="content-retry" type="button" class="secondary">重試內容</button></div>
+  <p id="thread-status" role="status"></p><div id="thread-table" class="table-wrap"></div><button type="button" id="thread-prev" class="secondary">上一頁</button><button type="button" id="thread-next" class="secondary">下一頁</button>
+  <h3>文字探索</h3><div class="actions"><label>計分<select id="keyword-metric"><option value="term_frequency">詞頻</option><option value="document_frequency">文件頻率</option></select></label><label>情緒<select id="keyword-sentiment"><option value="">沿用已套用條件</option><option value="positive">正面</option><option value="negative">負面</option></select></label><label><input type="checkbox" id="keyword-brand" checked>顯示品牌詞</label></div>
+  <p id="keyword-status" role="status"></p><button id="keyword-retry" type="button" class="secondary">重試文字探索</button><div id="keyword-cloud" class="keyword-cloud"></div><details><summary>關鍵詞排行</summary><div id="keyword-table" class="table-wrap"></div></details>
+  <section id="topic-comparison-editor" aria-label="自訂議題比較">
+    <h3>同報告自訂議題比較</h3><p>先套用上方報告條件，再獨立比對各主題；同一內容可命中多個主題。</p>
+    <label>已保存設定<select id="topic-saved"><option value="">新增設定</option></select></label>
+    <label>比較名稱<input id="topic-comparison-name" value="營運議題比較" maxlength="200"></label>
+    <div id="topic-editor-cards" class="insight-cards"></div>
+    <div class="actions"><button type="button" id="topic-add" class="secondary">新增主題</button><button type="button" id="topic-save" class="secondary">保存設定</button><button type="button" id="topic-compare" class="primary">開始比較</button></div><p id="topic-editor-status" role="status"></p><a id="topic-result-link" hidden>開啟已保存比較</a>
+  </section>
+  <h3>原報告抱怨主題（完整報告範圍）</h3>
+  <div id="topic-cards" class="insight-cards"></div>
+</section>
+<section class="panel" id="decision-panel">
+  <h2>問題與證據 → 改善計畫</h2>
+  <p>系統自動診斷、提出方案、評估並排程；根因是待驗證假設，營運工作由人執行。</p>
+  <form id="decision-form" class="filter-grid">
+    <label>開始日期<input type="date" id="plan-start"></label>
+    <label>每週可投入工時<input type="number" min="0.1" max="168" step="0.1" id="plan-hours"></label>
+    <label>資源與限制<textarea id="plan-constraints" maxlength="3000" placeholder="例如可用角色、預算及限制；未填資訊將列為假設"></textarea></label>
+    <button class="primary" id="start-decision">產生改善計畫</button>
+  </form>
+  <p id="decision-status" role="status" aria-live="polite"></p>
+  <div class="actions"><button id="cancel-decision" class="secondary" hidden>取消規劃</button><button id="retry-decision" class="secondary" hidden>從失敗階段重試</button><a id="decision-audit" hidden target="_blank">查看執行紀錄</a></div>
+  <div id="decision-problems" class="insight-cards"></div>
+  <div id="decision-tasks" class="insight-cards"></div>
+  <h3>AI／規則評估與真人評估</h3><div id="decision-evaluations"></div>
+  <form id="expert-form" hidden>
+    <h3>新增人工專家評分</h3><p>各項 1–5 分，5 分最佳；人工評分獨立保存。</p>
+    <div class="filter-grid"><label>評估者<input id="expert-name" required maxlength="100"></label>
+    {% for key, label in [('evidence','證據支持'),('feasibility','實用性'),('resources','資源可行性'),('measurability','可衡量性'),('risk','風險控制')] %}<label>{{ label }}<input name="{{ key }}" type="number" min="1" max="5" required value="3"></label>{% endfor %}</div>
+    <label>評分理由<textarea id="expert-reasons" required></textarea></label>
+    <label>建議修正<textarea id="expert-corrections" maxlength="5000"></textarea></label><button class="secondary">保存人工評分</button>
+  </form>
+  <form id="outcome-form" hidden>
+    <h3>改善前後觀察</h3><p>以介入日期前後各 28 日比較；僅顯示變化，不推定因果。</p>
+    <div class="filter-grid"><label>後續報告<select id="outcome-report"></select></label><label>實際介入日期<input type="date" id="outcome-date" required></label><button class="secondary">觀察前後變化</button></div>
+    <div id="outcome-result"></div>
+  </form>
+  <p id="insight-error" class="error" role="alert"></p>
+</section>

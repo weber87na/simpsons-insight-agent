@@ -122,6 +122,9 @@
           <select id="llm-model"><option value="{{ default_model }}">GPT-5.4 mini（預設）</option><option value="{{ premium_model }}">GPT-5.6 Sol（高品質）</option></select>
           <small class="field-help">不影響本地逐筆情感分析；主要影響面向、摘要與追問。</small>
         </label>
+        <label class="check"><input type="checkbox" id="auto-plan">自動產出改善計畫（蒐集結束後以可用資料繼續分析，包含部分來源資料）</label>
+        <div class="filter-grid"><label>計畫開始日期<input type="date" id="planning-start"></label><label>每週可投入工時<input type="number" id="planning-hours" min="0.1" max="168" step="0.1"></label><label>資源與限制<textarea id="planning-constraints" maxlength="3000"></textarea></label></div>
+        <p><a href="/comparisons">開啟品牌比較</a></p>
         <button class="primary" type="submit">預覽任務設定</button>
       </form>
     </section>

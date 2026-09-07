@@ -107,7 +107,7 @@ def test_0003_fixture_upgrades_without_losing_google_data(tmp_path: Path) -> Non
 
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
-    assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0004_multi_source"
+    assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005_decision"
     assert connection.execute("SELECT COUNT(*) FROM businesses").fetchone()[0] == 1
     assert connection.execute("SELECT COUNT(*) FROM crawl_jobs").fetchone()[0] == 1
     assert connection.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 1

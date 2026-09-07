@@ -1,0 +1,6 @@
+(() => {
+  const d=JSON.parse(document.getElementById('comparison-print-data').textContent),v=window.reportVisuals,colors=['#267b77','#a23435','#967414','#66519b','#245a9b'];document.getElementById('print-condition').textContent=v.describe(d.filters);
+  const points=d.groups[0]?.trends.points||[],root=document.getElementById('comparison-print-charts');
+  for(const [field,label,percent]of [['count','樣本聲量',false],['negative_ratio','負評比例',true],['pn_ratio','P/N',false]]){const figure=v.chart(points,d.groups.map((g,i)=>({key:g.key,label:g.name,color:colors[i],value:p=>g.trends.points.find(x=>x.period===p.period)?.[field]??null})),label,null,false,{percent,context:v.describe(d.filters)});const legend=v.el('p','圖例：');d.groups.forEach((g,i)=>{const span=v.el('span',g.name+'　');span.style.borderLeft='6px solid '+colors[i];span.style.paddingLeft='6px';legend.append(span);});figure.append(legend);root.append(figure);}
+  document.querySelectorAll('.print-member-charts').forEach(node=>{const g=d.groups[Number(node.dataset.memberIndex)];node.append(v.bars(['positive','neutral','negative'].map((key,i)=>({label:v.values[key],value:g[key+'_count'],color:['#26804c','#967414','#a23435'][i]})),'文字情緒筆數'),v.bars(Object.entries(g.sources).map(([key,value])=>({label:v.values[key]||key,value})),'來源筆數'));});
+})();

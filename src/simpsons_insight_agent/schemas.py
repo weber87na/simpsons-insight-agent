@@ -172,9 +172,17 @@ SourceConfig = Annotated[
 ]
 
 
+class PlanningOptions(BaseModel):
+    start_date: date | None = None
+    weekly_hours: float | None = Field(default=None, gt=0, le=168)
+    constraints: str = Field(default="", max_length=3000)
+
+
 class CreateJobRequest(BaseModel):
     """V2 multi-source request with the legacy Google-only fields kept compatible."""
 
+    auto_plan: bool = False
+    planning_options: PlanningOptions = Field(default_factory=lambda: PlanningOptions())
     subject: SubjectInput | None = None
     sources: list[SourceConfig] = Field(default_factory=list, max_length=3)
     llm_model: str | None = None
@@ -263,6 +271,7 @@ class JobSourceResponse(BaseModel):
 
 
 class JobResponse(BaseModel):
+    auto_plan: bool = False
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -294,6 +303,9 @@ class JobResponse(BaseModel):
 
 
 class ReviewResponse(BaseModel):
+    topic_keys: list[str] = Field(default_factory=list)
+    parent_source_id: str | None = None
+    channel_label: str | None = None
     id: str
     source: str = "google_maps"
     content_type: str = "review"
@@ -318,6 +330,7 @@ class ReviewResponse(BaseModel):
 
 
 class PaginatedReviews(BaseModel):
+    scope: dict = Field(default_factory=dict)
     items: list[ReviewResponse]
     total: int
     page: int

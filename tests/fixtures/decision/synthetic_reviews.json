@@ -1,0 +1,15 @@
+{
+  "license": "CC0-1.0",
+  "provenance": "本專案撰寫的虛構評論，無真實客戶或品牌資料。來源欄位僅模擬跨平台分布。不得據此宣稱模型準確率。",
+  "brands": ["春巷食堂（虛構）", "晴禾餐館（虛構）", "街角食堂（虛構）"],
+  "reviews": [
+    {"text": "等了四十分鐘才收到餐點，希望先告知等待時間。", "sentiment": "negative", "aspect": "speed_wait", "topic": 0},
+    {"text": "尖峰時段排隊太久，沒有人說明還要等多久。", "sentiment": "negative", "aspect": "speed_wait", "topic": 0},
+    {"text": "餐點不錯，但出餐速度很慢。", "sentiment": "positive", "aspect": "speed_wait", "topic": 0},
+    {"text": "服務人員沒有確認訂單，漏掉一份餐。", "sentiment": "negative", "aspect": "service", "topic": 1},
+    {"text": "提出漏單後沒有人協助處理。", "sentiment": "negative", "aspect": "service", "topic": 1},
+    {"text": "價目表清楚，份量也合理。", "sentiment": "positive", "aspect": "price_value", "topic": null},
+    {"text": "今天來店裡取餐。", "sentiment": "neutral", "aspect": "other", "topic": null},
+    {"text": "店員主動說明等候時間，取餐過程順利。", "sentiment": "positive", "aspect": "service", "topic": null}
+  ]
+}

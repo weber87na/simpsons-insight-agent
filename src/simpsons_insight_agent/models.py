@@ -86,6 +86,8 @@ class CrawlJob(Base):
     business_id: Mapped[str] = mapped_column(
         ForeignKey("businesses.id", ondelete="CASCADE"), index=True
     )
+    auto_plan: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    planning_options: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     status: Mapped[str] = mapped_column(String(40), default="PENDING_COLLECTION", index=True)
     max_reviews: Mapped[int] = mapped_column(Integer, default=500)
     sort_order: Mapped[str] = mapped_column(String(20), default="newest")
@@ -259,6 +261,7 @@ class ReviewAnalysis(Base):
     sentiment_scores: Mapped[dict] = mapped_column(JSON, default=dict)
     rating_sentiment: Mapped[str | None] = mapped_column(String(30))
     rating_text_conflict: Mapped[bool] = mapped_column(Boolean, default=False)
+    negative_aspects: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     aspects: Mapped[list] = mapped_column(JSON, default=list)
     key_points: Mapped[list] = mapped_column(JSON, default=list)
     local_model_id: Mapped[str] = mapped_column(String(300))
@@ -335,3 +338,64 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
+
+
+class TopicVersion(Base):
+    __tablename__ = "topic_versions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    report_id: Mapped[str] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
+    topic_key: Mapped[str] = mapped_column(String(36), index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class DecisionPlan(Base):
+    __tablename__ = "decision_plans"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    report_id: Mapped[str] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), unique=True)
+    status: Mapped[str] = mapped_column(String(30), default="PENDING")
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    diagnosis: Mapped[dict] = mapped_column(JSON, default=dict)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (UniqueConstraint("plan_id", "stage", name="uq_plan_stage"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("decision_plans.id", ondelete="CASCADE"), index=True)
+    stage: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(30), default="RUNNING")
+    input: Mapped[dict] = mapped_column(JSON, default=dict)
+    output: Mapped[dict] = mapped_column(JSON, default=dict)
+    tools: Mapped[list] = mapped_column(JSON, default=list)
+    elapsed_ms: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class ImprovementTask(Base):
+    __tablename__ = "improvement_tasks"
+    __table_args__ = (UniqueConstraint("plan_id", "task_key", name="uq_plan_task"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("decision_plans.id", ondelete="CASCADE"), index=True)
+    task_key: Mapped[str] = mapped_column(String(80))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class PlanEvaluation(Base):
+    __tablename__ = "plan_evaluations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("decision_plans.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BrandComparison(Base):
+    __tablename__ = "brand_comparisons"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    name: Mapped[str] = mapped_column(String(200))
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

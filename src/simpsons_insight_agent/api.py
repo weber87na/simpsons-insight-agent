@@ -12,20 +12,28 @@ from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Uploa
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from .analytics import (
+    ReportFilters,
+    csv_safe,
+    report_filters,
+    resolve_scope,
+    review_view,
+    sorted_items,
+)
 from .author_privacy import AuthorHasher
 from .config import get_settings
 from .db import dispose_db, get_session, init_db, mark_inflight_jobs_interrupted
 from .imports import MAX_IMPORT_BYTES, dcard_template, parse_dcard_import
+from .insight_api import router as insight_router
 from .jobs import JobManager
 from .models import (
     STREAM_END_JOB_STATUSES,
     Business,
     CrawlJob,
-    JobReview,
     Report,
     Review,
     ReviewAnalysis,
@@ -65,6 +73,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+
+app.include_router(insight_router)
 app.mount("/static", StaticFiles(directory=str(package_dir / "static")), name="static")
 
 
@@ -234,13 +244,21 @@ async def job_events(job_id: str, request: Request, manager: JobManager = Depend
             try:
                 job = await manager.get_job(job_id)
             except LookupError:
-                yield "event: error\ndata: {\"error\":\"not_found\"}\n\n"
+                yield 'event: error\ndata: {"error":"not_found"}\n\n'
                 return
             payload = _job_response(job).model_dump_json()
             if payload != last_payload:
                 yield f"data: {payload}\n\n"
                 last_payload = payload
-            if job.status in STREAM_END_JOB_STATUSES:
+            auto_continuing = (
+                job.auto_plan
+                and not job.cancel_requested
+                and job.collected_count > 0
+                and job.last_completed_stage in {None, "COLLECTION"}
+                and job.status
+                in {"READY_FOR_ANALYSIS", "COLLECTION_INTERRUPTED", "BLOCKED", "FAILED"}
+            )
+            if job.status in STREAM_END_JOB_STATUSES and not auto_continuing:
                 return
             await asyncio.sleep(0.75)
 
@@ -309,13 +327,8 @@ async def get_report(
 @app.get("/api/reports/{report_id}/items", response_model=PaginatedReviews)
 async def get_report_reviews(
     report_id: str,
-    review_id: str | None = None,
-    source: str | None = Query(default=None, pattern="^(google_maps|ptt|dcard)$"),
-    content_type: str | None = Query(default=None, pattern="^(review|post|comment)$"),
-    sentiment: str | None = None,
-    rating: int | None = Query(default=None, ge=1, le=5),
-    aspect: str | None = None,
-    q: str | None = Query(default=None, max_length=500),
+    filters: ReportFilters = Depends(report_filters),
+    sort: str = Query("original", pattern="^(original|date_desc|date_asc)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
@@ -323,72 +336,27 @@ async def get_report_reviews(
     report = await session.get(Report, report_id)
     if report is None:
         raise HTTPException(404, "找不到報告")
-    statement = (
-        select(Review, ReviewAnalysis)
-        .join(JobReview, JobReview.review_id == Review.id)
-        .outerjoin(
-            ReviewAnalysis,
-            and_(
-                ReviewAnalysis.job_id == report.job_id,
-                ReviewAnalysis.review_id == Review.id,
-            ),
-        )
-        .where(JobReview.job_id == report.job_id)
-        .order_by(_sentiment_priority(), JobReview.ordinal)
-    )
-    if review_id:
-        statement = statement.where(Review.id == review_id)
-    if source:
-        statement = statement.where(Review.source == source)
-    if content_type:
-        statement = statement.where(Review.content_type == content_type)
-    if rating is not None:
-        statement = statement.where(Review.rating == rating)
-    if q:
-        statement = statement.where(Review.text.contains(q))
-    if sentiment:
-        statement = statement.where(ReviewAnalysis.sentiment == sentiment)
-    if aspect:
-        statement = statement.where(ReviewAnalysis.aspects.contains(aspect))
-    total = int(await session.scalar(select(func.count()).select_from(statement.subquery())) or 0)
-    result = await session.execute(statement.offset((page - 1) * page_size).limit(page_size))
-    return PaginatedReviews(
-        items=[_review_response(review, analysis) for review, analysis in result.all()],
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
+    items, scope = await resolve_scope(session, report, filters)
+    items = sorted_items(items, sort)
+    return PaginatedReviews(items=[review_view(x) for x in items[(page-1)*page_size:page*page_size]],
+                            total=len(items), page=page, page_size=page_size, scope=scope)
 
 
 @app.get("/api/reports/{report_id}/export")
 async def export_report(
     report_id: str,
     format: str = Query(pattern="^(csv|json)$"),
+    filters: ReportFilters = Depends(report_filters),
     session: AsyncSession = Depends(get_session),
 ):
     report = await session.get(Report, report_id)
     if report is None:
         raise HTTPException(404, "找不到報告")
-    result = await session.execute(
-        select(Review, ReviewAnalysis)
-        .join(JobReview, JobReview.review_id == Review.id)
-        .outerjoin(
-            ReviewAnalysis,
-            and_(
-                ReviewAnalysis.job_id == report.job_id,
-                ReviewAnalysis.review_id == Review.id,
-            ),
-        )
-        .where(JobReview.job_id == report.job_id)
-        .order_by(_sentiment_priority(), JobReview.ordinal)
-    )
-    rows = [
-        _review_response(review, analysis).model_dump(mode="json")
-        for review, analysis in result.all()
-    ]
+    items, scope = await resolve_scope(session, report, filters)
+    rows = [review_view(x).model_dump(mode="json") for x in items]
     if format == "json":
         return JSONResponse(
-            {"report": _normalize_report_payload(report.payload), "items": rows, "reviews": rows}
+            {"report": _normalize_report_payload(report.payload), "items": rows, "reviews": rows, "scope": scope}
         )
 
     output = io.StringIO()
@@ -417,7 +385,7 @@ async def export_report(
     for row in rows:
         row["aspects"] = "|".join(row["aspects"])
         row["key_points"] = "|".join(row["key_points"])
-        writer.writerow(row)
+        writer.writerow({k: csv_safe(v) for k, v in row.items()})
     content = "\ufeff" + output.getvalue()
     return Response(
         content,
@@ -475,6 +443,7 @@ def _job_response(job: CrawlJob) -> JobResponse:
     source_runs = list(job.source_runs) if "source_runs" in job.__dict__ else []
     has_incomplete_source = any(not run.collection_complete for run in source_runs)
     return JobResponse(
+        auto_plan=job.auto_plan,
         id=job.id,
         business_id=job.business_id,
         subject_id=job.business_id,
@@ -497,8 +466,7 @@ def _job_response(job: CrawlJob) -> JobResponse:
             or (job.status == "FAILED" and has_incomplete_source)
         ),
         can_start_analysis=job.collected_count > 0
-        and job.status
-        in {"READY_FOR_ANALYSIS", "COLLECTION_INTERRUPTED", "BLOCKED", "FAILED"},
+        and job.status in {"READY_FOR_ANALYSIS", "COLLECTION_INTERRUPTED", "BLOCKED", "FAILED"},
         last_completed_stage=job.last_completed_stage,
         degraded_reasons=list(job.degraded_reasons or []),
         attempt_count=job.attempt_count,
@@ -537,9 +505,7 @@ def _report_response(report: Report) -> ReportResponse:
     )
 
 
-def _review_response(
-    review: Review, analysis: ReviewAnalysis | None = None
-) -> ReviewResponse:
+def _review_response(review: Review, analysis: ReviewAnalysis | None = None) -> ReviewResponse:
     return ReviewResponse(
         id=review.id,
         source=review.source or "google_maps",
@@ -566,7 +532,7 @@ def _review_response(
 
 
 def _normalize_report_payload(payload: dict) -> dict:
-    if payload.get("schema_version") == 2:
+    if payload.get("schema_version") in {2, 3, 4}:
         return payload
     legacy = dict(payload)
     overall = {

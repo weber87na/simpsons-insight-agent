@@ -1,0 +1,15 @@
+(() => {
+ const $=id=>document.getElementById(id), el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+ const labels={service:'服務',speed_wait:'效率／等候',product_quality:'產品／品質',price_value:'價格／價值',environment:'環境',other:'其他'};
+ async function api(url,body){const response=await fetch(url,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));return data;}
+ const error=e=>$('comparison-error').textContent=e.message;
+ async function show(id){const d=await api(`/api/comparisons/${id}`);const root=$('comparison-results');root.hidden=false;root.replaceChildren(el('h2',d.name));for(const w of d.warnings)root.append(el('p',w));root.append(el('p',`共同抱怨面向：${d.common_complaint_aspects.map(x=>labels[x]||x).join('、')||'無足夠資料'}`));const wrap=el('div');wrap.className='table-wrap';const table=el('table'),head=el('tr');for(const x of ['品牌','樣本數','來源組成','負評比例','抱怨主題／特色'])head.append(el('th',x));table.append(head);for(const b of d.brands){const row=el('tr'),name=el('td'),link=el('a',b.name);link.href=`/reports/${b.report_id}`;name.append(link);row.append(name,el('td',b.sample_size),el('td',Object.entries(b.sources).map(([k,v])=>`${k}: ${v}`).join('、')),el('td',b.negative_ratio===null?'無資料':`${(b.negative_ratio*100).toFixed(1)}%`),el('td',b.topics.map(t=>`${t.name} (${t.count})`).join('、')||'未建立語意主題'));table.append(row);}wrap.append(table);root.append(wrap);
+ const v=window.reportVisuals, colors=['#267b77','#a23435','#967414','#66519b','#245a9b'];
+ const points=d.brands[0]?.trends.points||[];
+ for(const [field,label] of [['count','同期間樣本聲量'],['negative_ratio','同期間負評比例（0–1）']])root.append(v.chart(points,d.brands.map((b,i)=>({key:b.report_id,label:b.name,color:colors[i],value:p=>b.trends.points.find(x=>x.period===p.period)?.[field]??null})),label));
+ root.append(el('h3','共同負面面向（占已分類文字比例，可複選）'),v.table(['面向',...d.brands.map(b=>b.name)],d.common_complaint_aspects.map(a=>[labels[a]||a,...d.brands.map(b=>v.percent(b.complaint_aspect_ratios?.[a]))])));
+ history.replaceState(null,'',`/comparisons?id=${encodeURIComponent(id)}`);}
+ $('compare-form').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/comparisons',{name:$('comparison-name').value,report_ids:[...$('comparison-reports').selectedOptions].map(x=>x.value),date_from:$('comparison-from').value,date_to:$('comparison-to').value,source:$('comparison-source').value||null,interval:$('comparison-interval').value});await show(d.id);}catch(e){error(e);}};
+ api('/api/insights/reports').then(reports=>{for(const r of reports){const o=el('option',`${r.name} · ${r.created_at}`);o.value=r.id;$('comparison-reports').append(o);}if(!reports.length)$('comparison-error').textContent='先建立至少兩個品牌的分析報告。';}).catch(error);
+ const id=new URLSearchParams(location.search).get('id');if(id)show(id).catch(error);
+})();

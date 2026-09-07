@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from .config import Settings, get_settings
 from .models import CrawlJob, JobSource
 
-EXPECTED_SCHEMA_REVISION = "0004_multi_source"
+EXPECTED_SCHEMA_REVISION = "0005_decision"
 
 
 def build_engine(settings: Settings | None = None) -> AsyncEngine:

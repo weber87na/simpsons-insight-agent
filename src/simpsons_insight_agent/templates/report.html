@@ -6,13 +6,15 @@
   <title>{{ business.name if business else '分析報告' }}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='multi-source.css') }}">
+  <link rel="stylesheet" href="/static/insights.css">
 </head>
 <body data-report-id="{{ report.id }}" data-job-id="{{ report.job_id }}">
   <main class="shell report-shell">
     <nav class="top-nav">
-      <a href="/">← 返回任務</a>
+      <a href="/">← 返回任務</a><a href="/comparisons">品牌比較</a>
       <div class="top-nav-actions"><span>{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</span><button id="delete-report-job" class="danger" type="button">刪除任務與爬文資料</button></div>
     </nav>
+    {% if report.payload.synthetic_demo %}<p class="panel">合成示範資料：品牌、評論、情緒標籤與主題向量均為展示用，不能用於宣稱模型準確率。</p>{% endif %}
     <header class="report-hero">
       <div>
         <p class="eyebrow">CROSS-PLATFORM REPUTATION REPORT</p>
@@ -21,7 +23,10 @@
       </div>
       <div class="score-card"><strong>{{ report.payload.sample_size }}</strong><span>跨平台樣本</span></div>
     </header>
+    <p class="panel">先套用條件探索樣本；完整報告摘要與舊明細可於下方展開。<a href="#insights-panel">前往營運分析，套用條件並回查同批證據 →</a></p>
 
+    {% include "insights.html" %}
+    <details class="panel" id="original-report"><summary>完整報告摘要（未套用營運分析條件）</summary>
     {% if report.status == 'PARTIAL' %}
     <aside class="warning"><strong>這是部分報告</strong><p>本地結果已保存，但 OpenAI 面向或管理摘要尚未完整完成。可回到任務頁按「續跑」。</p></aside>
     {% endif %}
@@ -177,8 +182,10 @@
     </section>
     {% endif %}
 
+    </details>
     <p class="report-meta">報告模型：{{ report.model_id or '未使用 OpenAI' }} · 產生時間：{{ report.payload.generated_at }}</p>
 
+    <details class="panel"><summary>舊版逐筆內容（獨立篩選）</summary>
     <section class="panel">
       <div class="section-title compact">
         <div><h2>逐筆內容</h2><p>原文只保存在本機；作者不顯示，雲端只收到匿名且遮罩常見個資後的內容。</p></div>
@@ -210,6 +217,7 @@
       <div class="pagination"><button id="prev-page" class="secondary">上一頁</button><span id="page-info" aria-live="polite"></span><button id="next-page" class="secondary">下一頁</button></div>
     </section>
 
+    </details>
     <section class="panel qa-panel">
       <p class="eyebrow">GROUNDED Q&A</p>
       <h2>追問這份報告</h2>
@@ -223,5 +231,9 @@
     </section>
   </main>
   <script src="{{ url_for('static', path='report.js') }}" defer></script>
+  <script src="/static/report-components.js" defer></script>
+  <script src="/static/analytics.js" defer></script>
+  <script src="/static/insights.js" defer></script>
+  <script src="/static/topic-editor.js" defer></script>
 </body>
 </html>

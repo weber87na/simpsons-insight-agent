@@ -1,0 +1,25 @@
+.insight-cards {display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:18px 0}
+.insight-card {border:1px solid #cfc7b6;border-radius:12px;padding:18px;background:#fffdf6;overflow-wrap:anywhere}
+.insight-card h3 {margin-top:0}.insight-card label{display:block;margin:8px 0}.insight-card input,.insight-card textarea,.insight-card select{width:100%}
+.trend-svg {width:100%;height:auto;min-height:160px;background:#fffdf6;border-radius:12px}
+.insight-chart figcaption {font-weight:700}.insight-chart{margin:12px 0}.insight-chart svg text{font:12px sans-serif;fill:#433d35}
+.insight-card button{margin:4px}.evidence-dialog{max-width:700px;max-height:80vh;overflow:auto;border-radius:14px;border:1px solid #8c7860;padding:24px}.evidence-dialog::backdrop{background:#0007}
+#expert-form,#outcome-form {border-top:1px solid #cfc7b6;padding-top:20px;margin-top:20px} [hidden]{display:none!important}
+.error:empty {display:none}
+/* Report-scoped exploration */
+#trend-form { position:relative; border:1px solid #d8d1c0; padding:12px; border-radius:10px; }
+#insights-panel input[type="checkbox"] { width:18px; height:18px; min-height:0; padding:0; display:inline-block; vertical-align:middle; margin-right:8px; }
+#trend-note { overflow-wrap:anywhere; position:sticky; top:44px; z-index:4; background:#fffaf0; padding:10px; font-size:14px; }
+#insights-panel>nav { position:sticky; top:0; z-index:5; background:#fffaf0; padding:10px; }
+.keyword-cloud { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; padding:16px; }
+.keyword-cloud button { line-height:1.2; color:#267b77; }
+.insight-chart circle:focus { outline:2px solid #292929; stroke:#292929; stroke-width:3; }
+.actions [aria-disabled="true"] { opacity:.45; cursor:wait; }
+.evidence-dialog { width:min(850px,90vw); max-height:85vh; overflow:auto; }
+section, #analytics-summary, #channel-table, #thread-table, #keyword-cloud { scroll-margin-top:70px; }
+.chart-downloads {margin-top:8px;font-size:13px}.chart-downloads button{font-size:13px;padding:6px 10px}
+.insight-chart svg {width:100%;height:auto;max-height:900px}.insight-chart rect:focus{stroke:#111;stroke-width:3;outline:none}
+.chart-legend button[aria-pressed="false"] {opacity:.45}
+#original-report>summary, details.panel>summary {font-size:18px;font-weight:bold;cursor:pointer;padding:10px}
+#topic-comparison-editor {border-top:1px solid #ccc;padding-top:16px;margin-top:24px}
+@media print {.chart-downloads,.chart-legend{display:none} .insight-chart{break-inside:avoid}}
