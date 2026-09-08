@@ -55,6 +55,7 @@ from .sources import (
     SourceCanceledError,
     SourceCheckpoint,
     SourceProvider,
+    SourceUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -704,11 +705,17 @@ class JobManager:
             async def on_metrics(
                 values: dict,
                 _source: str = source_run.source,
+                _run_id: str = source_run.id,
             ) -> None:
+                metrics = dict(values)
+                provider_checkpoint = metrics.pop("checkpoint", None)
+                if isinstance(provider_checkpoint, dict):
+                    # Providers emit only after the corresponding batch is committed.
+                    await self._set_source_run(_run_id, checkpoint=provider_checkpoint)
                 await self._record_event(
                     job_id,
                     "collection_batch",
-                    {"source": _source, **values},
+                    {"source": _source, **metrics},
                 )
 
             async def on_metadata(values: dict) -> None:
@@ -718,6 +725,11 @@ class JobManager:
                 config = await self._resolved_source_config(source_run)
                 config["_job_id"] = job_id
                 provider = self.providers[source_run.source]
+                provider_checkpoint = dict(source_run.checkpoint or {})
+                if source_run.source in {"ptt", "dcard"}:
+                    provider_checkpoint.update(
+                        await self._forum_checkpoint(job_id, source_run.source)
+                    )
                 result = await provider.collect(
                     config=config,
                     checkpoint=SourceCheckpoint(
@@ -725,7 +737,7 @@ class JobManager:
                         collected_count=already_collected,
                         post_count=existing_posts,
                         comment_count=existing_comments,
-                        provider=dict(source_run.checkpoint or {}),
+                        provider=provider_checkpoint,
                     ),
                     callbacks=SourceCallbacks(
                         on_batch=on_batch,
@@ -739,15 +751,24 @@ class JobManager:
                 count, post_count, comment_count = await self._source_counts(
                     job_id, source_run.source
                 )
+                status = "COMPLETE" if result.complete else "PARTIAL"
+                source_error = None
+                if result.stop_reason == "public_source_blocked":
+                    status = "PARTIAL" if count else "BLOCKED"
+                    source_error = str(result.checkpoint.get("blocked_reason") or "公開來源拒絕請求")[:500]
+                elif result.stop_reason == "public_source_unavailable":
+                    status = "PARTIAL" if count else "FAILED"
+                    source_error = str(result.checkpoint.get("unavailable_reason") or "公開來源暫時無法使用")[:500]
                 await self._set_source_run(
                     source_run.id,
-                    status="COMPLETE" if result.complete else "PARTIAL",
+                    status=status,
                     collected_count=count,
                     post_count=post_count,
                     comment_count=comment_count,
                     collection_complete=result.complete,
                     stop_reason=result.stop_reason,
                     checkpoint=result.checkpoint,
+                    error=source_error,
                 )
             except (MapsCanceledError, SourceCanceledError):
                 count, post_count, comment_count = await self._source_counts(
@@ -776,6 +797,21 @@ class JobManager:
                     comment_count=comment_count,
                     collection_complete=False,
                     stop_reason="blocked",
+                    error=str(exc)[:500],
+                )
+                interrupted = True
+            except SourceUnavailableError as exc:
+                count, post_count, comment_count = await self._source_counts(
+                    job_id, source_run.source
+                )
+                await self._set_source_run(
+                    source_run.id,
+                    status="PARTIAL" if count else "FAILED",
+                    collected_count=count,
+                    post_count=post_count,
+                    comment_count=comment_count,
+                    collection_complete=False,
+                    stop_reason="source_unavailable",
                     error=str(exc)[:500],
                 )
                 interrupted = True
@@ -908,6 +944,33 @@ class JobManager:
             counts = {kind: int(value) for kind, value in rows}
         total = sum(counts.values())
         return total, counts.get("post", 0), counts.get("comment", 0)
+
+    async def _forum_checkpoint(self, job_id: str, source: str) -> dict:
+        """Recover thread limits from committed rows, even after an interrupted callback."""
+        async with SessionLocal() as session:
+            rows = await session.execute(
+                select(Review.content_type, Review.thread_source_id, Review.source_item_id, Review.source_url)
+                .join(JobReview, JobReview.review_id == Review.id)
+                .where(JobReview.job_id == job_id, Review.source == source)
+            )
+            comment_counts: dict[str, int] = {}
+            thread_ids: set[str] = set()
+            thread_urls: set[str] = set()
+            for content_type, thread_id, source_id, source_url in rows:
+                thread = thread_id or source_id
+                if not thread:
+                    continue
+                if content_type == "comment":
+                    comment_counts[thread] = comment_counts.get(thread, 0) + 1
+                elif content_type == "post":
+                    thread_ids.add(thread)
+                    if source_url:
+                        thread_urls.add(source_url)
+        return {
+            "thread_comment_counts": comment_counts,
+            "thread_ids": sorted(thread_ids),
+            "thread_urls": sorted(thread_urls),
+        }
 
     async def _set_source_run(self, source_run_id: str, **values: object) -> None:
         async with SessionLocal() as session:
@@ -1052,6 +1115,7 @@ class JobManager:
         async with SessionLocal() as session:
             source_kinds = {item.source for item in items}
             source_ids = {item.source_item_id for item in items if item.source_item_id}
+            source_ids.update(alias for item in items for alias in item.legacy_source_item_ids)
             hashes = {item.content_hash for item in items}
             conditions = [Review.content_hash.in_(hashes)]
             if source_ids:
@@ -1078,10 +1142,17 @@ class JobManager:
                 existing = by_source.get((item.source, item.source_item_id)) or by_hash.get(
                     (item.source, item.content_hash)
                 )
+                if existing is None:
+                    existing = next(
+                        (by_source[(item.source, alias)] for alias in item.legacy_source_item_ids
+                         if (item.source, alias) in by_source),
+                        None,
+                    )
                 parsed = parse_relative_date(item.relative_date)
                 published_at = item.published_at or parsed.estimated_at
                 precision = item.date_precision if item.published_at else parsed.precision
                 if existing:
+                    by_source[(item.source, item.source_item_id)] = existing
                     existing.text = item.text or existing.text
                     existing.relative_date = item.relative_date or existing.relative_date
                     existing.owner_reply = item.owner_reply or existing.owner_reply

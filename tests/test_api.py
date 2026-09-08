@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from simpsons_insight_agent.api import app, settings
+from simpsons_insight_agent.api import _source_diagnostics, app, settings
 
 
 def test_app_starts_and_serves_local_pages() -> None:
@@ -72,3 +72,21 @@ def test_dcard_import_template_and_strict_upload(
             files={"file": ("bad.json", json.dumps([row]).encode(), "application/json")},
         )
         assert invalid.status_code == 422
+
+
+def test_source_diagnostics_expose_only_safe_counts_and_known_reasons() -> None:
+    assert _source_diagnostics({
+        "pages_fetched": 3,
+        "missing_articles": 1,
+        "article_requests": "invalid",
+        "duplicate_items": True,
+        "collection_scope": "public_html",
+        "thread_ids": ["private-id"],
+        "thread_urls": ["https://example.test/private"],
+        "partial_reasons": ["article_unavailable", "article_unavailable", "private-id", {}],
+    }) == {
+        "pages_fetched": 3,
+        "missing_articles": 1,
+        "collection_scope": "public_html",
+        "partial_reasons": ["article_unavailable"],
+    }

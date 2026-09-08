@@ -6,9 +6,9 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
 
 from .author_privacy import AuthorHasher
+from .forum_urls import canonical_dcard_url
 from .privacy import normalize_text
 
 DCARD_IMPORT_FIELDS = (
@@ -70,9 +70,30 @@ def parse_dcard_import(
 
     normalized: list[dict] = []
     errors: list[str] = []
+    identities: dict[tuple, dict] = {}
+    thread_forums: dict[str, str] = {}
     for number, row in enumerate(rows, start=2 if suffix == ".csv" else 1):
         try:
-            normalized.append(_normalize_dcard_row(row, hasher))
+            item = _normalize_dcard_row(row, hasher)
+            thread_id = item["thread_id"]
+            if thread_id in thread_forums and thread_forums[thread_id] != item["forum"]:
+                raise ValueError("同一 thread_id 的 forum 不一致")
+            thread_forums[thread_id] = item["forum"]
+            # Match the collector's fallback identity for comments without a public ID.
+            identity = (
+                ("id", item["source_item_id"])
+                if item["source_item_id"]
+                else (
+                    "fallback", item["source_url"], item["item_type"],
+                    item["published_at"], item["text"],
+                )
+            )
+            if identity in identities:
+                if identities[identity] != item:
+                    raise ValueError("同一 source_item_id 或內容識別資料衝突，請移除重複版本")
+                continue
+            identities[identity] = item
+            normalized.append(item)
         except ValueError as exc:
             errors.append(f"第 {number} 筆：{exc}")
     if errors:
@@ -84,29 +105,18 @@ def parse_dcard_import(
 
 
 def _normalize_dcard_row(row: dict, hasher: AuthorHasher) -> dict:
-    item_type = normalize_text(str(row.get("item_type") or "")).lower()
+    string_fields = set(DCARD_IMPORT_FIELDS) - {"reaction_count"}
+    for field in string_fields:
+        if row.get(field) is not None and not isinstance(row[field], str):
+            raise ValueError(f"{field} 必須是字串")
+    item_type = normalize_text(row.get("item_type") or "").lower()
     if item_type not in {"post", "comment"}:
         raise ValueError("item_type 必須是 post 或 comment")
-    text = normalize_text(str(row.get("text") or ""))
+    text = normalize_text(row.get("text") or "")
     if not text or len(text) > 50_000:
         raise ValueError("text 必填且不可超過 50,000 字")
-    source_url = str(row.get("source_url") or "").strip().rstrip("/")
-    parsed = urlparse(source_url)
-    try:
-        port = parsed.port
-    except ValueError as exc:
-        raise ValueError("source_url 必須是 Dcard 公開文章網址") from exc
-    if (
-        parsed.scheme != "https"
-        or (parsed.hostname or "").lower() != "www.dcard.tw"
-        or port not in {None, 443}
-        or parsed.username is not None
-        or parsed.password is not None
-        or bool(parsed.query)
-        or bool(parsed.fragment)
-        or not re.fullmatch(r"/f/[A-Za-z0-9_-]+/p/\d+/?", parsed.path)
-    ):
-        raise ValueError("source_url 必須是 Dcard 公開文章網址")
+    source_url = canonical_dcard_url(row.get("source_url") or "")
+    _, _, _, _, url_forum, _, url_thread_id = source_url.split("/")
     published_at = str(row.get("published_at") or "").strip()
     try:
         datetime.fromisoformat(published_at.replace("Z", "+00:00"))
@@ -115,21 +125,38 @@ def _normalize_dcard_row(row: dict, hasher: AuthorHasher) -> dict:
     thread_id = normalize_text(str(row.get("thread_id") or ""))
     if item_type == "comment" and not thread_id:
         raise ValueError("comment 必須提供 thread_id")
-    try:
-        reaction_count = int(row.get("reaction_count") or 0)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("reaction_count 必須是整數") from exc
+    if thread_id and thread_id != url_thread_id:
+        raise ValueError("thread_id 必須與 source_url 的文章 ID 一致")
+    forum = normalize_text(row.get("forum") or "").lower()
+    if forum and forum != url_forum:
+        raise ValueError("forum 必須與 source_url 的看板一致")
+    source_item_id = normalize_text(row.get("source_item_id") or "")
+    if item_type == "post":
+        if source_item_id and source_item_id != url_thread_id:
+            raise ValueError("post 的 source_item_id 必須與文章 ID 一致")
+        source_item_id = url_thread_id
+    elif source_item_id == url_thread_id:
+        raise ValueError("comment 的 source_item_id 不可與文章 ID 相同")
+    reaction_value = row.get("reaction_count")
+    if reaction_value is None or reaction_value == "":
+        reaction_count = 0
+    elif type(reaction_value) is int:
+        reaction_count = reaction_value
+    elif isinstance(reaction_value, str) and re.fullmatch(r"-?[0-9]+", reaction_value.strip()):
+        reaction_count = int(reaction_value.strip())
+    else:
+        raise ValueError("reaction_count 必須是整數")
     if reaction_count < 0:
         raise ValueError("reaction_count 不可為負數")
     return {
         "item_type": item_type,
-        "source_item_id": normalize_text(str(row.get("source_item_id") or "")) or None,
-        "thread_id": thread_id or None,
+        "source_item_id": source_item_id or None,
+        "thread_id": url_thread_id,
         "parent_id": normalize_text(str(row.get("parent_id") or "")) or None,
         "title": normalize_text(str(row.get("title") or "")) or None,
         "text": text,
         "published_at": published_at,
-        "forum": normalize_text(str(row.get("forum") or "")) or None,
+        "forum": url_forum,
         "source_url": source_url,
         "author_hash": hasher.hash("dcard", str(row.get("author") or "")),
         "reaction_count": reaction_count,

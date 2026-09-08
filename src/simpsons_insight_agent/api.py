@@ -487,10 +487,39 @@ def _job_response(job: CrawlJob) -> JobResponse:
                 "error": run.error,
                 "attempt_count": run.attempt_count,
                 "config": run.config,
+                "diagnostics": _source_diagnostics(run.checkpoint or {}),
             }
             for run in source_runs
         ],
     )
+
+
+def _source_diagnostics(checkpoint: dict) -> dict:
+    """Expose collection counts, never internal cursors or thread identities."""
+    counter_keys = {
+        "pages_fetched", "articles_fetched", "missing_articles", "unparsed_articles",
+        "filtered_articles", "search_pages", "article_requests", "unavailable_articles",
+        "duplicate_items", "unknown_date_items", "search_urls_found", "import_thread_count",
+    }
+    result: dict = {
+        key: value for key, value in checkpoint.items()
+        if key in counter_keys and type(value) is int and value >= 0
+    }
+    reasons = checkpoint.get("partial_reasons", [])
+    if isinstance(reasons, list):
+        allowed = {
+            "post_limit", "page_limit", "pagination_cycle", "thread_comment_limit", "comment_limit",
+            "article_unavailable", "article_parse_partial", "public_page_partial", "public_search_partial",
+            "public_source_blocked", "public_source_unavailable", "source_unavailable", "unknown_date",
+            "invalid_url",
+        }
+        result["partial_reasons"] = list(dict.fromkeys(
+            reason for reason in reasons if isinstance(reason, str) and reason in allowed
+        ))
+    scope = checkpoint.get("collection_scope")
+    if isinstance(scope, str) and scope in {"public_html", "import_only"}:
+        result["collection_scope"] = scope
+    return result
 
 
 def _report_response(report: Report) -> ReportResponse:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -52,7 +53,11 @@ def test_ptt_search_and_article_parser_preserve_duplicate_pushes_without_authors
         "boo",
     ]
     assert items[1].source_item_id != items[2].source_item_id
-    assert all(item.published_at and item.published_at.year == 2026 for item in items[1:])
+    assert all(
+        item.published_at
+        and item.published_at.astimezone(timezone(timedelta(hours=8))).year == 2026
+        for item in items[1:]
+    )
     serialized = str([asdict(item) for item in items])
     assert "alice" not in serialized
     assert "bob" not in serialized

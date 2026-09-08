@@ -16,7 +16,7 @@
 
     <details class="warning source-policy">
       <summary><strong>來源與使用限制</strong><span>展開閱讀</span></summary>
-      <p>請自行確認資料使用權限。Dcard 僅處理你指定的公開文章 URL 或合法取得的檔案，不登入、不搜尋全站、不展開隱藏內容；PTT 僅使用公開板內搜尋且不繞過存取限制。請先閱讀 <a href="https://www.ptt.cc/index.ua.html" target="_blank" rel="noopener noreferrer">PTT 條款</a>及 <a href="https://www.dcard.tw/terms" target="_blank" rel="noopener noreferrer">Dcard 使用協議</a>。</p>
+      <p>請自行確認資料使用權限。Dcard 支援公開網頁的關鍵字搜尋、指定文章 URL 與合法取得的檔案；PTT 使用公開板內搜尋。公開頁面可能只提供部分內容；遭遇登入或驗證限制時會保留已取得資料並標示原因，不繞過限制。請先閱讀 <a href="https://www.ptt.cc/index.ua.html" target="_blank" rel="noopener noreferrer">PTT 條款</a>及 <a href="https://www.dcard.tw/terms" target="_blank" rel="noopener noreferrer">Dcard 使用協議</a>。</p>
     </details>
 
     <nav class="journey-nav" aria-label="分析流程">
@@ -47,13 +47,13 @@
         </label>
         <label>別名（選填，逗號分隔）
           <input id="subject-aliases" maxlength="1000" placeholder="Din Tai Fung, 鼎泰豐信義店">
-          <small class="field-help">英文名、舊名或常見稱呼；會自動帶入 PTT</small>
+          <small class="field-help">英文名、舊名或常見稱呼；PTT 會自動帶入，Dcard 可勾選沿用</small>
         </label>
       </div>
       <form id="search-form" class="inline-form">
         <label>跨來源搜尋關鍵字（選填，可用逗號分隔）
           <input id="query" minlength="2" placeholder="留空：自動使用名稱＋城市／地址＋別名">
-          <small class="field-help">會套用到 Google Maps 候選與 PTT 標題搜尋；Dcard 目前仍需指定公開文章。</small>
+          <small class="field-help">會套用到 Google Maps 候選與 PTT 標題搜尋；Dcard 可勾選沿用，也可設定自己的關鍵字。</small>
         </label>
         <div class="inline-form-action">
           <span class="inline-form-spacer" aria-hidden="true">&nbsp;</span>
@@ -95,26 +95,31 @@
             <label>文章上限<input id="ptt-max-posts" type="number" min="1" max="200" value="50"></label>
             <label>推文上限<input id="ptt-max-comments" type="number" min="0" max="2000" value="500"></label>
             <label>每串推文上限<input id="ptt-per-thread" type="number" min="0" max="100" value="100"></label>
+            <label>每組搜尋頁數上限<input id="ptt-max-search-pages" type="number" min="1" max="100" value="20"><small class="field-help">每個看板與關鍵字組合最多翻查幾頁；達上限會標示部分完成。</small></label>
           </div>
         </article>
 
         <article class="source-card">
-          <label class="source-toggle"><input id="source-dcard" type="checkbox"> <strong>Dcard</strong><span>指定公開文章或合法匯入資料</span></label>
+          <label class="source-toggle"><input id="source-dcard" type="checkbox"> <strong>Dcard</strong><span>公開關鍵字搜尋、指定文章與資料匯入</span></label>
           <div class="source-fields" data-source-fields="dcard">
-            <div class="source-notice wide"><strong>為什麼 Dcard 要網址？</strong><p>Dcard 目前採「指定公開文章」模式，不搜尋全站、不自動翻頁，也不呼叫未公開 API；這是為了避免抓取不相關或未授權內容。若要分析某個關鍵字，請先從 Dcard 複製符合的公開文章網址，或使用下方 CSV／JSON 匯入。</p></div>
+            <div class="source-notice wide"><strong>公開頁面收集範圍</strong><p>搜尋與翻頁依公開網頁可見內容進行；文章或留言未完整顯示、搜尋頁需要登入或驗證時，會保留已取得資料並標示部分完成或受阻。你也可以指定文章網址，或匯入合法取得的完整資料。</p></div>
+            <label class="check wide"><input id="dcard-use-subject-keywords" type="checkbox"> 沿用上方搜尋詞（自訂關鍵字留空時生效）</label>
+            <label>自訂關鍵字（選填，逗號分隔）<input id="dcard-keywords" placeholder="例如：鼎泰豐, Din Tai Fung"><small class="field-help">最多 10 個。未填且未勾選沿用時，僅處理指定文章與匯入檔。</small></label>
+            <label>搜尋看板（選填，逗號分隔）<input id="dcard-forums" placeholder="例如：food, travel"><small class="field-help">使用網址中的看板代稱，最多 10 個；留空搜尋所有公開看板，只限制關鍵字搜尋範圍。</small></label>
             <label class="wide">公開文章 URL（每行一個）<textarea id="dcard-urls" rows="4" placeholder="https://www.dcard.tw/f/food/p/123456789"></textarea><small class="field-help">格式必須是 https://www.dcard.tw/f/看板/p/文章ID</small></label>
             <label>起始日<input id="dcard-date-from" type="date"></label>
             <label>結束日<input id="dcard-date-to" type="date"></label>
             <label>文章上限<input id="dcard-max-posts" type="number" min="1" max="100" value="50"></label>
             <label>留言上限<input id="dcard-max-comments" type="number" min="0" max="2000" value="500"></label>
             <label>每串留言上限<input id="dcard-per-thread" type="number" min="0" max="100" value="100"></label>
+            <label>每組搜尋頁數上限<input id="dcard-max-search-pages" type="number" min="1" max="20" value="5"><small class="field-help">每個關鍵字與看板組合的頁數預算；實際頁數依公開頁面提供的翻頁連結。</small></label>
             <div class="upload-field wide">
               <label>Dcard CSV／JSON<input id="dcard-file" type="file" accept=".csv,.json"></label>
               <button id="upload-dcard" class="secondary" type="button">驗證並加入匯入檔</button>
               <a href="/api/source-imports/dcard/template?format=csv">下載 CSV 範本</a>
               <span id="dcard-import-status" class="muted">尚未加入檔案</span>
             </div>
-            <label class="check wide"><input id="dcard-terms" type="checkbox"> 我確認只匯入有權使用的公開內容，並已閱讀 <a href="https://www.dcard.tw/terms" target="_blank" rel="noopener noreferrer">Dcard 使用協議</a>限制。</label>
+            <label class="check wide"><input id="dcard-terms" type="checkbox"> 我確認只收集或匯入有權使用的公開內容，並已閱讀 <a href="https://www.dcard.tw/terms" target="_blank" rel="noopener noreferrer">Dcard 使用協議</a>限制。</label>
           </div>
         </article>
 

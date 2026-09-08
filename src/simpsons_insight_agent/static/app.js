@@ -29,7 +29,7 @@ function refreshSearchScope() {
   if (preview) preview.textContent = keywordText;
   const scope = byId("search-scope");
   if (scope) scope.textContent = terms.length
-    ? `目前搜尋詞：${keywordText}。Google Maps 會用它找候選分店；PTT 會在你選定的看板搜尋標題；Dcard 仍需指定公開文章。`
+    ? `目前搜尋詞：${keywordText}。Google Maps 會用它找候選分店；PTT 會在你選定的看板搜尋標題；Dcard 可勾選沿用搜尋詞，或自行指定關鍵字、公開文章與匯入檔。`
     : "請先輸入名稱，或在搜尋關鍵字欄輸入要查找的詞。地址只用於協助定位 Google Maps 分店。";
 }
 
@@ -106,7 +106,7 @@ byId("upload-dcard")?.addEventListener("click", async () => {
   const data = await response.json();
   if (!response.ok) { status.textContent = data.detail || "匯入失敗"; status.classList.add("error"); return; }
   status.classList.remove("error");
-  dcardImportIds.push(data.import_id);
+  if (!dcardImportIds.includes(data.import_id)) dcardImportIds.push(data.import_id);
   status.textContent = `已加入 ${data.filename}（${data.row_count} 筆）`;
   byId("source-dcard").checked = true;
   byId("source-dcard").dispatchEvent(new Event("change"));
@@ -137,17 +137,22 @@ function buildPayload() {
       date_from: byId("ptt-date-from").value, date_to: byId("ptt-date-to").value,
       max_posts: Number(byId("ptt-max-posts").value), max_comments: Number(byId("ptt-max-comments").value),
       max_comments_per_thread: Number(byId("ptt-per-thread").value),
+      max_search_pages: Number(byId("ptt-max-search-pages").value),
     });
   }
   if (byId("source-dcard").checked) {
     const urls = splitValues(byId("dcard-urls").value);
-    if (!urls.length && !dcardImportIds.length) throw new Error("Dcard 目前不支援全站關鍵字搜尋；請貼上至少一個公開文章 URL 或加入 CSV／JSON 匯入檔");
+    const customKeywords = splitValues(byId("dcard-keywords").value);
+    const dcardKeywords = customKeywords.length ? customKeywords : (byId("dcard-use-subject-keywords").checked ? keywords : []);
+    const forums = splitValues(byId("dcard-forums").value);
+    if (!urls.length && !dcardImportIds.length && !dcardKeywords.length) throw new Error("Dcard 請輸入關鍵字、勾選沿用上方搜尋詞、貼上公開文章 URL，或加入 CSV／JSON 匯入檔");
     if (!byId("dcard-terms").checked) throw new Error("請確認 Dcard 來源條款提醒");
     sources.push({
-      source: "dcard", urls, import_ids: dcardImportIds,
+      source: "dcard", urls, import_ids: dcardImportIds, keywords: dcardKeywords, forums,
       date_from: byId("dcard-date-from").value, date_to: byId("dcard-date-to").value,
       max_posts: Number(byId("dcard-max-posts").value), max_comments: Number(byId("dcard-max-comments").value),
       max_comments_per_thread: Number(byId("dcard-per-thread").value), acknowledge_terms: true,
+      max_search_pages: Number(byId("dcard-max-search-pages").value),
     });
   }
   if (!sources.length) throw new Error("請至少選擇一個資料來源");
@@ -165,8 +170,8 @@ byId("job-form")?.addEventListener("submit", (event) => {
   catch (error) { return alert(error.message); }
   byId("preview-content").innerHTML = `
     <article><span>分析主題</span><strong>${escapeHtml(pendingPayload.subject.name)}</strong><small>${escapeHtml(pendingPayload.subject.address || "未指定地址")}</small></article>
-    <article><span>共用搜尋詞</span><strong>${escapeHtml(currentSubjectTerms().join("、") || "未指定")}</strong><small>Google Maps 與 PTT 會沿用；Dcard 需指定公開文章</small></article>
-    ${pendingPayload.sources.map((source) => `<article><span>來源</span><strong>${sourceLabel(source.source)}</strong><small>${sourceSummary(source)}</small></article>`).join("")}`;
+    <article><span>共用搜尋詞</span><strong>${escapeHtml(currentSubjectTerms().join("、") || "未指定")}</strong><small>Google Maps 與 PTT 會沿用；Dcard 依下列設定搜尋</small></article>
+    ${pendingPayload.sources.map((source) => `<article><span>來源</span><strong>${sourceLabel(source.source)}</strong><small>${escapeHtml(sourceSummary(source))}</small></article>`).join("")}`;
   show(byId("job-preview")); byId("job-preview").scrollIntoView({behavior: "smooth"});
 });
 
@@ -201,7 +206,7 @@ function renderJob(job) {
   (job.sources || []).forEach((source) => {
     const item = document.createElement("article"); item.className = "source-progress-row";
     const error = source.error?.replace(`${source.stop_reason}: `, "");
-    const detail = [source.stop_reason, error].filter(Boolean).join(" · ");
+    const detail = [sourceStopReason(source.stop_reason), error, sourceDiagnosticSummary(source.diagnostics, source.stop_reason)].filter(Boolean).join(" · ");
     item.innerHTML = `<strong>${sourceLabel(source.source)}</strong><span class="badge status-${source.status.toLowerCase()}">${escapeHtml(source.status)}</span><span>${source.collected_count} 筆${source.post_count ? ` · ${source.post_count} 篇` : ""}${source.comment_count ? ` · ${source.comment_count} 則回應` : ""}</span><small>${escapeHtml(detail)}</small>`;
     sourceProgress.appendChild(item);
   });
@@ -263,9 +268,47 @@ document.querySelectorAll(".resume-existing").forEach((button) => button.addEven
 document.querySelectorAll(".analyze-existing").forEach((button) => button.addEventListener("click", async () => startAnalysis(button.dataset.jobId, button.dataset.complete === "true")));
 
 function sourceLabel(source) { return ({google_maps: "Google Maps", ptt: "PTT", dcard: "Dcard"})[source] || source; }
+function sourceStopReason(reason) {
+  return ({
+    public_source_blocked: "公開來源限制存取", public_source_unavailable: "公開來源暫時無法取得",
+    post_limit: "已達文章上限", page_limit: "已達搜尋頁數上限", pagination_cycle: "來源重複回傳相同頁面",
+    thread_comment_limit: "已達每串回應上限", comment_limit: "已達回應總上限",
+    article_unavailable: "部分文章無法取得", article_parse_partial: "部分文章解析不完整",
+    public_search_partial: "公開搜尋僅取得部分資料", public_page_partial: "公開頁面僅顯示部分內容",
+    search_exhausted: "已完成可取得的搜尋結果", input_exhausted: "已處理全部指定資料",
+    target_reached: "已達設定收集目標", unknown_date: "部分資料缺少可判斷的日期",
+    source_unavailable: "來源暫時無法取得", blocked: "來源限制存取",
+    invalid_url: "部分文章網址不符合公開來源格式",
+    application_shutdown: "程式關閉導致收集中斷", canceled: "使用者已取消",
+  })[reason] || reason;
+}
+function sourceDiagnosticSummary(diagnostics = {}, stopReason = null) {
+  const fields = [
+    [["pages_fetched", "search_pages_fetched", "search_pages"], "搜尋", "頁"],
+    [["articles_fetched", "article_requests"], "文章讀取", "次"],
+    [["missing_articles", "unavailable_articles", "unavailable_urls"], "無法取得", "篇"],
+    [["unparsed_articles", "parse_failures"], "解析失敗", "篇"],
+    [["duplicate_items"], "去除重複", "筆"],
+    [["unknown_date_items"], "缺少日期", "筆"],
+  ];
+  const details = [];
+  for (const [keys, label, unit] of fields) {
+    const count = keys.map((key) => diagnostics?.[key]).find((value) => Number.isSafeInteger(value) && value >= 0);
+    if (count > 0) details.push(`${label} ${count} ${unit}`);
+  }
+  if (Array.isArray(diagnostics?.partial_reasons)) {
+    for (const reason of new Set(diagnostics.partial_reasons)) {
+      if (typeof reason !== "string" || reason === stopReason) continue;
+      const label = sourceStopReason(reason);
+      if (typeof label === "string" && label !== reason) details.push(label);
+    }
+  }
+  return details.join(" · ");
+}
 function sourceSummary(source) {
   if (source.source === "google_maps") return `最多 ${source.max_reviews} 則評論`;
-  if (source.source === "ptt") return `${source.boards.join("、")} · 自動搜尋 ${source.keywords.join("、")} · ${source.max_posts} 篇／${source.max_comments} 則推文`;
-  return `${source.urls.length} 篇公開文章、${source.import_ids.length} 個匯入檔 · ${source.max_posts} 篇／${source.max_comments} 則留言`;
+  if (source.source === "ptt") return `${source.boards.join("、")} · 自動搜尋 ${source.keywords.join("、")} · 每組最多 ${source.max_search_pages} 頁 · ${source.max_posts} 篇／${source.max_comments} 則推文`;
+  const search = source.keywords.length ? `搜尋 ${source.keywords.join("、")}（${source.forums.length ? source.forums.join("、") : "全部公開看板"}，每組最多 ${source.max_search_pages} 頁） · ` : "";
+  return `${search}${source.urls.length} 篇指定文章、${source.import_ids.length} 個匯入檔 · ${source.max_posts} 篇／${source.max_comments} 則留言`;
 }
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]); }

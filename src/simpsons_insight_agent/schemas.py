@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 from .config import get_settings
+from .forum_urls import canonical_dcard_url
 
 SourceKind = Literal["google_maps", "ptt", "dcard"]
 ContentType = Literal["review", "post", "comment"]
@@ -34,19 +35,7 @@ def _validate_maps_url(value: HttpUrl) -> HttpUrl:
 
 
 def _validate_dcard_url(value: HttpUrl) -> HttpUrl:
-    parsed = urlparse(str(value))
-    if (
-        parsed.scheme != "https"
-        or (parsed.hostname or "").lower() != "www.dcard.tw"
-        or parsed.port not in {None, 443}
-        or parsed.username is not None
-        or parsed.password is not None
-        or bool(parsed.query)
-        or bool(parsed.fragment)
-        or not re.fullmatch(r"/f/[A-Za-z0-9_-]+/p/\d+/?", parsed.path)
-    ):
-        raise ValueError("只允許 https://www.dcard.tw/f/{forum}/p/{id} 公開文章網址")
-    return value
+    return HttpUrl(canonical_dcard_url(str(value)))
 
 
 class BusinessCandidate(BaseModel):
@@ -107,6 +96,7 @@ class PttSourceConfig(BaseModel):
     max_posts: int = Field(default=50, ge=1, le=200)
     max_comments: int = Field(default=500, ge=0, le=2000)
     max_comments_per_thread: int = Field(default=100, ge=0, le=100)
+    max_search_pages: int = Field(default=20, ge=1, le=100, strict=True)
 
     @field_validator("boards")
     @classmethod
@@ -135,12 +125,39 @@ class DcardSourceConfig(BaseModel):
     source: Literal["dcard"] = "dcard"
     urls: list[HttpUrl] = Field(default_factory=list, max_length=50)
     import_ids: list[str] = Field(default_factory=list, max_length=20)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    forums: list[str] = Field(default_factory=list, max_length=10)
     date_from: date = Field(default_factory=lambda: date.today() - timedelta(days=365))
     date_to: date = Field(default_factory=date.today)
     max_posts: int = Field(default=50, ge=1, le=100)
     max_comments: int = Field(default=500, ge=0, le=2000)
     max_comments_per_thread: int = Field(default=100, ge=0, le=100)
+    max_search_pages: int = Field(default=5, ge=1, le=20, strict=True)
     acknowledge_terms: bool = False
+
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, values: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(value.strip() for value in values))
+        if any(not value or len(value) > 100 for value in cleaned):
+            raise ValueError("Dcard 關鍵字不得為空且不可超過 100 字")
+        return cleaned
+
+    @field_validator("forums")
+    @classmethod
+    def validate_forums(cls, values: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(value.strip().lower() for value in values))
+        if any(not re.fullmatch(r"[a-z0-9_-]{1,64}", value) for value in cleaned):
+            raise ValueError("Dcard 看板名稱格式錯誤，請使用網址中的看板代稱")
+        return cleaned
+
+    @field_validator("import_ids")
+    @classmethod
+    def validate_import_ids(cls, values: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(value.strip() for value in values))
+        if any(not value or len(value) > 100 for value in cleaned):
+            raise ValueError("Dcard 匯入批次 ID 不得為空且不可超過 100 字")
+        return cleaned
 
     @field_validator("urls")
     @classmethod
@@ -159,8 +176,8 @@ class DcardSourceConfig(BaseModel):
     def validate_config(self) -> DcardSourceConfig:
         if self.date_from > self.date_to:
             raise ValueError("Dcard 起始日不可晚於結束日")
-        if not self.urls and not self.import_ids:
-            raise ValueError("Dcard 至少需要一個公開文章 URL 或匯入批次")
+        if not self.urls and not self.import_ids and not self.keywords:
+            raise ValueError("Dcard 至少需要一個關鍵字、公開文章 URL 或匯入批次")
         if not self.acknowledge_terms:
             raise ValueError("必須確認 Dcard 來源條款提醒")
         return self
@@ -268,6 +285,7 @@ class JobSourceResponse(BaseModel):
     error: str | None
     attempt_count: int
     config: dict
+    diagnostics: dict = Field(default_factory=dict)
 
 
 class JobResponse(BaseModel):
