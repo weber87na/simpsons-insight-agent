@@ -101,3 +101,66 @@ def test_dcard_import_rejects_missing_or_unknown_fields(tmp_path: Path) -> None:
             json.dumps([extra], ensure_ascii=False).encode(),
             make_hasher(tmp_path),
         )
+
+
+@pytest.mark.parametrize("value", [True, False, 1.5, 1.0, "1.5", [], {}])
+def test_dcard_import_rejects_non_integer_reactions(tmp_path: Path, value: object) -> None:
+    row = {**valid_row(), "reaction_count": value}
+    with pytest.raises(ValueError, match="reaction_count 必須是整數"):
+        parse_dcard_import("items.json", json.dumps([row]).encode(), make_hasher(tmp_path))
+
+
+@pytest.mark.parametrize("field", ["text", "author", "thread_id", "source_item_id", "forum"])
+def test_dcard_import_rejects_structured_or_coerced_strings(tmp_path: Path, field: str) -> None:
+    row = {**valid_row(), field: {"unexpected": "data"}}
+    with pytest.raises(ValueError, match=f"{field} 必須是字串"):
+        parse_dcard_import("items.json", json.dumps([row]).encode(), make_hasher(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "changes,message",
+    [
+        ({"thread_id": "999"}, "thread_id"),
+        ({"forum": "travel"}, "forum"),
+        ({"item_type": "post", "source_item_id": "999"}, "source_item_id"),
+        ({"source_item_id": "256789012"}, "source_item_id"),
+    ],
+)
+def test_dcard_import_rejects_mismatched_article_identity(
+    tmp_path: Path, changes: dict, message: str
+) -> None:
+    row = {**valid_row(), **changes}
+    with pytest.raises(ValueError, match=message):
+        parse_dcard_import("items.json", json.dumps([row]).encode(), make_hasher(tmp_path))
+
+
+def test_dcard_import_fills_post_identity_and_deduplicates_share_urls(tmp_path: Path) -> None:
+    row = {
+        **valid_row(), "item_type": "post", "thread_id": "", "parent_id": "", "forum": "",
+        "source_url": "https://www.dcard.tw/f/Food/p/256789012/?utm_source=share#comments",
+    }
+    duplicate = {**row, "source_url": "https://www.dcard.tw/f/food/p/256789012"}
+    rows = parse_dcard_import(
+        "items.json", json.dumps([row, duplicate]).encode(), make_hasher(tmp_path)
+    )
+    assert len(rows) == 1
+    assert rows[0]["source_item_id"] == rows[0]["thread_id"] == "256789012"
+    assert rows[0]["forum"] == "food"
+    assert rows[0]["source_url"] == "https://www.dcard.tw/f/food/p/256789012"
+
+
+@pytest.mark.parametrize("source_id", ["", "comment-123"])
+def test_dcard_import_rejects_conflicting_stable_duplicates(tmp_path: Path, source_id: str) -> None:
+    row = {**valid_row(), "source_item_id": source_id}
+    changed = {**row, "reaction_count": row["reaction_count"] + 1}
+    with pytest.raises(ValueError, match="識別資料衝突"):
+        parse_dcard_import("items.json", json.dumps([row, changed]).encode(), make_hasher(tmp_path))
+
+
+def test_dcard_import_rejects_same_thread_in_different_forums(tmp_path: Path) -> None:
+    row = valid_row()
+    changed = {
+        **row, "forum": "travel", "source_url": "https://www.dcard.tw/f/travel/p/256789012",
+    }
+    with pytest.raises(ValueError, match="forum 不一致"):
+        parse_dcard_import("items.json", json.dumps([row, changed]).encode(), make_hasher(tmp_path))

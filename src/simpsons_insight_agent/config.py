@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     diagnostics_trace: bool = False
     sentiment_batch_size: int = Field(default=32, ge=1, le=128)
     source_http_timeout_seconds: float = Field(default=30.0, ge=5, le=120)
+    source_http_retries: int = Field(default=2, ge=0, le=3)
     ptt_request_interval_seconds: float = Field(default=1.0, ge=0.5, le=10)
     dcard_request_interval_seconds: float = Field(default=2.0, ge=1, le=20)
 

@@ -255,3 +255,96 @@ async def test_resume_only_retries_incomplete_source_and_deduplicates_checkpoint
             ).all()
         )
     assert {review.source_item_id for review in reviews} == {"post-1", "comment-1"}
+
+
+@pytest.mark.parametrize(
+    ("reason", "diagnostic", "empty_status"),
+    [
+        ("public_source_blocked", "blocked_reason", "BLOCKED"),
+        ("public_source_unavailable", "unavailable_reason", "FAILED"),
+    ],
+)
+@pytest.mark.parametrize("with_import", [False, True])
+async def test_dcard_public_failure_preserves_import_and_reports_status(
+    reason: str, diagnostic: str, empty_status: str, with_import: bool
+) -> None:
+    manager = JobManager(Settings(openai_api_key=None))
+
+    class PartialDcard:
+        source = "dcard"
+
+        async def collect(self, *, config, checkpoint, callbacks):
+            if with_import:
+                await callbacks.on_batch([item("dcard", "post", f"import-{uuid.uuid4()}", "匯入保留")])
+            return SourceCollectionResult(
+                source="dcard", collected_count=int(with_import), post_count=int(with_import),
+                comment_count=0, complete=False, stop_reason=reason,
+                checkpoint={diagnostic: "fixture diagnosis"},
+            )
+
+    manager.providers["dcard"] = PartialDcard()
+    request = three_source_request()
+    request.sources = [source for source in request.sources if source.source == "dcard"]
+    job = await manager.create_job(request)
+    await manager._process_collection(job.id)
+    stored = await manager.get_job(job.id)
+    async with SessionLocal() as session:
+        run = await session.scalar(select(JobSource).where(JobSource.job_id == job.id))
+        assert run.status == ("PARTIAL" if with_import else empty_status)
+        assert run.error == "fixture diagnosis"
+        assert run.stop_reason == reason
+    assert stored.collected_count == int(with_import)
+    assert stored.collection_complete is False
+    assert stored.status == ("READY_FOR_ANALYSIS" if with_import else empty_status)
+
+
+async def test_checkpoint_is_durable_before_provider_interrupts() -> None:
+    manager = JobManager(Settings(openai_api_key=None))
+
+    class InterruptedPtt:
+        source = "ptt"
+
+        async def collect(self, *, config, checkpoint, callbacks):
+            post = item("ptt", "post", f"post-{uuid.uuid4()}", "已儲存")
+            comment = item("ptt", "comment", f"comment-{uuid.uuid4()}", "已儲存的推文")
+            comment.thread_source_id = post.source_item_id
+            await callbacks.on_batch([post, comment])
+            await callbacks.on_metrics({"checkpoint": {"cursor": "page-2"}, "pages_fetched": 1})
+            raise SourceBlockedError("next page blocked")
+
+    manager.providers["ptt"] = InterruptedPtt()
+    request = three_source_request()
+    request.sources = [source for source in request.sources if source.source == "ptt"]
+    job = await manager.create_job(request)
+    await manager._process_collection(job.id)
+    async with SessionLocal() as session:
+        run = await session.scalar(select(JobSource).where(JobSource.job_id == job.id))
+        assert run.checkpoint == {"cursor": "page-2"}
+        assert run.collected_count == 2
+    recovered = await manager._forum_checkpoint(job.id, "ptt")
+    assert len(recovered["thread_ids"]) == 1
+    assert recovered["thread_comment_counts"][recovered["thread_ids"][0]] == 1
+    assert recovered["thread_urls"] == ["https://www.ptt.cc/bbs/Food/M.1.html"]
+
+
+async def test_old_source_identity_alias_reuses_persisted_review() -> None:
+    manager = JobManager(Settings(openai_api_key=None))
+    request = three_source_request()
+    request.sources = [source for source in request.sources if source.source == "ptt"]
+    first_job = await manager.create_job(request)
+    old_id, new_id = f"old-{uuid.uuid4()}", f"new-{uuid.uuid4()}"
+    old = item("ptt", "comment", old_id, "既有推文")
+    await manager._persist_items(first_job.id, first_job.business_id, [old])
+    new = item("ptt", "comment", new_id, "既有推文")
+    new.legacy_source_item_ids = [old_id]
+    await manager._persist_items(first_job.id, first_job.business_id, [new])
+    assert await manager._job_collected_count(first_job.id) == 1
+    second_job = await manager.create_job(request)
+    await manager._persist_items(second_job.id, second_job.business_id, [new])
+    assert await manager._job_collected_count(second_job.id) == 1
+    async with SessionLocal() as session:
+        reviews = list((await session.scalars(select(Review).where(
+            Review.business_id == first_job.business_id
+        ))).all())
+        assert len(reviews) == 1
+        assert reviews[0].source_item_id == old_id

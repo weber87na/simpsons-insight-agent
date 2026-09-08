@@ -28,6 +28,14 @@ class SourceBlockedError(SourceError):
     pass
 
 
+class SourceNotFoundError(SourceError):
+    """A removed public resource (HTTP 404/410), not a source-wide block."""
+
+
+class SourceUnavailableError(SourceError):
+    """A transient transport/server failure after bounded retries."""
+
+
 class SourceCanceledError(SourceError):
     pass
 
@@ -52,6 +60,7 @@ class CollectedItem:
     date_precision: str = "unknown"
     owner_reply: str | None = None
     platform_data: dict = field(default_factory=dict)
+    legacy_source_item_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
