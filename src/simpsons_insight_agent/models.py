@@ -399,3 +399,39 @@ class BrandComparison(Base):
     name: Mapped[str] = mapped_column(String(200))
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ValidationRun(Base):
+    __tablename__ = "validation_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("decision_plans.id", ondelete="CASCADE"), unique=True)
+    status: Mapped[str] = mapped_column(String(30), default="PENDING")
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    stages: Mapped[dict] = mapped_column(JSON, default=dict)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ValidationExperiment(Base):
+    __tablename__ = "validation_experiments"
+    __table_args__ = (UniqueConstraint("run_id", "experiment_key", name="uq_validation_experiment"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    run_id: Mapped[str] = mapped_column(ForeignKey("validation_runs.id", ondelete="CASCADE"), index=True)
+    experiment_key: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(30), default="DRAFT")
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ValidationResult(Base):
+    __tablename__ = "validation_results"
+    __table_args__ = (UniqueConstraint("experiment_id", "submission_id", name="uq_validation_submission"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("validation_experiments.id", ondelete="CASCADE"), index=True)
+    submission_id: Mapped[str] = mapped_column(String(80))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    verdict: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

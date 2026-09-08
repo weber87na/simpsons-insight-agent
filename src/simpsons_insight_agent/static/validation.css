@@ -1,0 +1,19 @@
+#validation-cards { grid-template-columns: 1fr; }
+#validation-panel .filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  align-items: start;
+  gap: 16px;
+  margin: 24px 0;
+}
+#validation-panel .filter-grid > p,
+#validation-panel .filter-grid > label:has(input[type="checkbox"]) {
+  grid-column: 1 / -1;
+}
+#validation-panel .filter-grid > button { justify-self: start; white-space: nowrap; }
+#validation-panel .filter-grid label { min-width: 0; }
+#validation-panel .filter-grid input:not([type="checkbox"]),
+#validation-panel .filter-grid textarea,
+#validation-panel .filter-grid select { width: 100%; box-sizing: border-box; }
+#validation-panel .insight-card > button { margin: 4px 8px 8px 0; }
+#validation-panel .validation-result { margin-top: 12px; }

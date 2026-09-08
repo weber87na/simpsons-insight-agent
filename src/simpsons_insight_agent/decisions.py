@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .db import SessionLocal
+from .evidence_keys import map_evidence_ids
 from .models import AgentRun, DecisionPlan, ImprovementTask, JobEvent, PlanEvaluation, Report
 from .privacy import sanitize_for_openai
 from .schemas import PlanningOptions
@@ -282,18 +283,7 @@ class DecisionCoordinator:
                     x["id"]: f"e{i:03d}" for i, x in enumerate(payload.get("evidence", []))
                 }
 
-                def map_ids(value, mapping, field=""):
-                    if isinstance(value, dict):
-                        return {k: map_ids(v, mapping, k) for k, v in value.items()}
-                    if isinstance(value, list):
-                        return [map_ids(v, mapping, field) for v in value]
-                    return (
-                        mapping.get(value, value)
-                        if isinstance(value, str) and field in {"id", "evidence_ids"}
-                        else value
-                    )
-
-                cloud_payload = map_ids(payload, evidence_map)
+                cloud_payload = map_evidence_ids(payload, evidence_map)
                 async with SessionLocal() as s:
                     run = await s.get(AgentRun, run_id)
                     if run:
@@ -309,7 +299,7 @@ class DecisionCoordinator:
                     if time.monotonic() - started > 120:
                         raise TimeoutError("Agent 超過 120 秒")
                 parsed, usage = work.result()
-                result = map_ids(
+                result = map_evidence_ids(
                     parsed.model_dump(mode="json"), {v: k for k, v in evidence_map.items()}
                 )
             if schema is Diagnosis:

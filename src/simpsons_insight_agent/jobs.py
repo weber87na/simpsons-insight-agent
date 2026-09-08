@@ -57,6 +57,7 @@ from .sources import (
     SourceProvider,
     SourceUnavailableError,
 )
+from .validation import ValidationCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class JobManager:
         self.embeddings = EmbeddingService(self.settings)
         self.openai = OpenAIService(self.settings)
         self.decisions = DecisionCoordinator(self.openai, self.queue)
+        self.validations = ValidationCoordinator(self.openai, self.queue)
         self._worker: asyncio.Task | None = None
         self._verification_events: dict[str, asyncio.Event] = {}
         self._active_jobs: set[str] = set()
@@ -83,6 +85,7 @@ class JobManager:
 
     async def start(self) -> None:
         await self.decisions.recover()
+        await self.validations.recover()
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(
                 self._worker_loop(), name="simpsons-insight-agent-worker"
@@ -448,6 +451,9 @@ class JobManager:
                 self.queue.task_done()
 
     async def _process_job(self, job_id: str) -> None:
+        if job_id.startswith("validation:"):
+            await self.validations.run(job_id.split(":", 1)[1])
+            return
         if job_id.startswith("decision:"):
             await self.decisions.run(job_id.split(":", 1)[1])
             return

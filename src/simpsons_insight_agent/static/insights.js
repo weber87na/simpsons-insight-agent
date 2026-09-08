@@ -30,9 +30,11 @@
     for(const id of ids){try{const data=await api(`/api/reports/${reportId}/evidence/${encodeURIComponent(id)}`);const items=[data];for(const r of items){dialog.append(el('h3',r.source),el('p',r.text));}}catch(e){dialog.append(el('p',e.message));}}
   }
   const evidenceButton = ids => {const b=el('button','查看引用內容','secondary');b.type='button';b.onclick=()=>evidence(ids).catch(message);return b;};
+  window.openReportEvidence = evidence;
   async function loadTopics(){const data=await api(`/api/reports/${reportId}/topics`);$('topic-cards').replaceChildren();for(const t of data.topics){const o=el('option',`${t.name} (${t.count})`);o.value=t.topic_key;$('trend-topic').append(o);if(new URLSearchParams(location.search).get('topic_key')===t.topic_key)o.selected=true;const card=el('article',undefined,'insight-card');card.append(el('h3',t.name),el('p',`${t.count} 筆 · ${t.mapping==='matched'?'對應既有主題':'新主題'}${t.provisional?' · 單筆暫定':''}`),list(t.keywords),evidenceButton(t.item_ids.slice(0,10)));$('topic-cards').append(card);}if(!data.topics.length)$('topic-cards').append(el('p',data.analysis.status==='legacy'?'舊報告未保存主題快照。':'目前沒有可呈現的抱怨分群。'));if(data.analysis.missing_embeddings)$('topic-cards').append(el('p',`${data.analysis.missing_embeddings} 筆缺少向量，未納入語意分群。`));}
   function field(form,label,key,value,type='text'){const l=el('label',label);const input=el(type==='textarea'?'textarea':'input');input.name=key;if(type!=='textarea')input.type=type;input.value=value||'';l.append(input);form.append(l);return input;}
   function renderPlan(data){
+    document.dispatchEvent(new CustomEvent('decision-loaded', {detail:data}));
     planId=data.id;const running=['PENDING','RUNNING'].includes(data.status);$('decision-status').textContent=`${data.status}${data.error?'：'+data.error:''} ${data.runs?.map(r=>`${r.stage}: ${r.status}`).join(' · ')||''}`;
     $('decision-form').hidden=!!planId;$('cancel-decision').hidden=!running;$('retry-decision').hidden=!['PARTIAL','CANCELED'].includes(data.status);$('decision-audit').hidden=!planId;$('decision-audit').href=`/api/decisions/${planId}/audit`;
     if(running)return;

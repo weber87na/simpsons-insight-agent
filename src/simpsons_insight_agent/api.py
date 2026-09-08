@@ -53,6 +53,7 @@ from .schemas import (
     SourceImportResponse,
     StartAnalysisRequest,
 )
+from .validation_api import router as validation_router
 
 settings = get_settings()
 package_dir = Path(__file__).resolve().parent
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
 
 app.include_router(insight_router)
+app.include_router(validation_router)
 app.mount("/static", StaticFiles(directory=str(package_dir / "static")), name="static")
 
 
